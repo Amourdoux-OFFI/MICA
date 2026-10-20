@@ -59,6 +59,7 @@ interface State {
   setDragActive: (v: boolean) => void;
   setServerDropPath: (p: string | null) => void;
   dismissTask: (key: string) => void;
+  finishTask: (key: string) => void;
 }
 
 let toastSeq = 1;
@@ -174,6 +175,13 @@ export const useApp = create<State>((set, get) => ({
   setInstallTarget: (id) => set({ installTarget: id }),
   setDragActive: (v) => set({ dragActive: v }),
   setServerDropPath: (p) => set({ serverDropPath: p }),
+  finishTask: (key) =>
+    set((s) => {
+      const cur = s.tasks[key];
+      if (!cur || cur.finishedAt) return {};
+      return { tasks: { ...s.tasks, [key]: { ...cur, finishedAt: Date.now() } } };
+    }),
+
   dismissTask: (key) =>
     set((s) => {
       const next = { ...s.tasks };

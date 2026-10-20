@@ -23,6 +23,7 @@ export function useBackendEvents() {
               `游戏已退出${p.code != null ? `（退出码 ${p.code}）` : ""}`,
               p.code === 0 ? "info" : "error"
             );
+            state().finishTask("launch");
             void state().refreshInstances();
           }),
           listen("launch://error", (e) => {
