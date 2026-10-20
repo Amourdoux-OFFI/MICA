@@ -498,6 +498,7 @@ async fn run(raw: Vec<String>, data_dir: Option<PathBuf>, verbose: bool) -> Resu
                 mojang: &ctx.mojang,
                 java: java.as_ref(),
                 concurrency: ctx.settings.effective_concurrency(),
+                cf: Some(&crate::curseforge::CfClient::from_settings(&ctx.http, &ctx.settings)),
             };
             let opts = crate::modpack::PackOptions {
                 name: args.get("name").map(|s| s.to_string()),
@@ -522,6 +523,7 @@ async fn run(raw: Vec<String>, data_dir: Option<PathBuf>, verbose: bool) -> Resu
                 mojang: &ctx.mojang,
                 java: java.as_ref(),
                 concurrency: ctx.settings.effective_concurrency(),
+                cf: Some(&crate::curseforge::CfClient::from_settings(&ctx.http, &ctx.settings)),
             };
             let result = crate::modpack::install_modrinth_pack(
                 &env,
@@ -573,6 +575,35 @@ async fn run(raw: Vec<String>, data_dir: Option<PathBuf>, verbose: bool) -> Resu
                 "source": if !ctx.settings.curseforge_api_key.trim().is_empty() { "settings" }
                           else if std::env::var("CURSEFORGE_API_KEY").map(|v| !v.trim().is_empty()).unwrap_or(false) { "env" }
                           else { "none" },
+            }))
+        }
+
+        "cf-install-mod" => {
+            let instance_id = args.pos(1).ok_or_else(|| MicaError::msg("缺少实例 ID"))?;
+            let mod_id: u64 = args.pos(2).ok_or_else(|| MicaError::msg("缺少 modId"))?.parse()
+                .map_err(|_| MicaError::msg("modId 必须是数字"))?;
+            let file_id: u64 = args.pos(3).ok_or_else(|| MicaError::msg("缺少 fileId"))?.parse()
+                .map_err(|_| MicaError::msg("fileId 必须是数字"))?;
+            let inst = Instance::load(&ctx.paths, instance_id)?;
+            let cf = crate::curseforge::CfClient::from_settings(&ctx.http, &ctx.settings);
+            let file = cf.file(mod_id, file_id).await?;
+            let name = std::path::Path::new(&file.file_name)
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| format!("cf-{file_id}.jar"));
+            let mods = ctx.paths.game_dir(&inst.id).join("mods");
+            std::fs::create_dir_all(&mods)?;
+            let dest = mods.join(&name);
+            if cf.download_url(&file).await?.is_none() {
+                return Ok(json!({"ok": false, "manual": true, "fileName": name, "sha1": file.sha1()}));
+            }
+            let prog = ctx.progress("CurseForge", "安装");
+            let size = cf.download_file(&file, &dest, &prog).await?;
+            let sha1 = crate::hash::sha1_file(&dest)?;
+            Ok(json!({
+                "ok": true, "instance": inst.id, "fileName": name,
+                "path": dest.display().to_string(), "size": size,
+                "sha1": sha1, "expectedSha1": file.sha1(),
             }))
         }
 

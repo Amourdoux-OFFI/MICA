@@ -1,4 +1,4 @@
-﻿//! 整合包：格式识别与安装（Modrinth / MultiMC / 通用 zip；CurseForge 暂缓）。
+//! 整合包：格式识别与安装（Modrinth / MultiMC / 通用 zip；CurseForge 暂缓）。
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -127,7 +127,8 @@ pub fn detect(path: &Path) -> Result<PackInfo> {
 
     if has("manifest.json") {
         if let Ok(raw) = archive::read_entry(path, "manifest.json") {
-            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&raw) {
+            let raw = raw.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&raw);
+            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(raw) {
                 let mtype = v.get("manifestType").and_then(|x| x.as_str()).unwrap_or("");
                 if mtype == "minecraftModpack" {
                     let name = v
@@ -164,8 +165,8 @@ pub fn detect(path: &Path) -> Result<PackInfo> {
                             .and_then(|x| x.as_array())
                             .map(|a| a.len())
                             .unwrap_or(0),
-                        supported: false,
-                        note: "CurseForge 下载与解析已按计划暂缓，当前仅支持识别。可先用逐文件手动下载后通过「覆盖安装」导入。".into(),
+                        supported: true,
+                        note: "CurseForge 整合包：按 manifest.json 解析并下载（需 API Key）".into(),
                     });
                 }
             }
@@ -271,6 +272,7 @@ pub struct PackEnv<'a> {
     pub mojang: &'a Mojang,
     pub java: Option<&'a JavaRuntime>,
     pub concurrency: usize,
+    pub cf: Option<&'a crate::curseforge::CfClient>,
 }
 
 pub async fn install(
@@ -284,10 +286,7 @@ pub async fn install(
         "modrinth" => install_mrpack(env, file, &info, opts, progress).await,
         "multimc" => install_multimc(env, file, &info, opts, progress).await,
         "generic" => install_generic(env, file, &info, opts, progress).await,
-        "curseforge" => Err(MicaError::Unsupported(format!(
-            "CurseForge 整合包安装已按计划暂缓（空壳）。{}",
-            info.note
-        ))),
+        "curseforge" => install_curseforge(env, file, &info, opts, progress).await,
         _ => Err(MicaError::Unsupported(format!(
             "无法识别的整合包：{}",
             info.note
@@ -407,6 +406,184 @@ async fn install_mrpack(
     })
 }
 
+async fn install_curseforge(
+    env: &PackEnv<'_>,
+    file: &Path,
+    info: &PackInfo,
+    opts: &PackOptions,
+    progress: &Progress,
+) -> Result<PackInstallResult> {
+    // manifest.json 可能在根目录或子目录
+    let entries = archive::list_zip(file)?;
+    let manifest_name = entries
+        .iter()
+        .filter(|e| e.name.ends_with("manifest.json"))
+        .min_by_key(|e| e.name.matches('/').count())
+        .map(|e| e.name.clone())
+        .ok_or_else(|| MicaError::Msg("整合包缺少 manifest.json".into()))?;
+    let raw = archive::read_entry(file, &manifest_name)?;
+    let raw = raw.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&raw);
+    let v: serde_json::Value = serde_json::from_slice(raw)?;
+
+    let mc = v
+        .pointer("/minecraft/version")
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| info.mc_version.clone())
+        .ok_or_else(|| MicaError::Msg("CurseForge 整合包未提供 Minecraft 版本".into()))?;
+
+    let loaders = v
+        .pointer("/minecraft/modLoaders")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let loader_id = loaders
+        .iter()
+        .find(|l| l.get("primary").and_then(|p| p.as_bool()).unwrap_or(false))
+        .or_else(|| loaders.first())
+        .and_then(|l| l.get("id"))
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
+    let mut loader_kind = None;
+    let mut loader_ver = None;
+    if let Some((k, ver)) = loader_id.split_once('-') {
+        loader_kind = Some(k.to_string());
+        let mut ver = ver.to_string();
+        if let Some(rest) = ver.strip_prefix(&format!("{mc}-")) {
+            ver = rest.to_string();
+        }
+        loader_ver = Some(ver);
+    }
+
+    let name = opts.name.clone().unwrap_or_else(|| {
+        v.get("name")
+            .and_then(|x| x.as_str())
+            .unwrap_or(info.name.as_str())
+            .to_string()
+    });
+    let pack_version = v
+        .get("version")
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string());
+
+    progress.log(format!(
+        "CurseForge 整合包：{name} · MC {mc} · 加载器 {loader_kind:?}"
+    ));
+    ensure_base(env, &mc, progress).await?;
+    ensure_loader(env, &mc, &loader_kind, &loader_ver, progress).await?;
+
+    let inst = create_or_target(
+        env.paths,
+        &name,
+        &mc,
+        loader_kind.clone(),
+        loader_ver.clone(),
+        "curseforge",
+        pack_version,
+        opts,
+    )?;
+    let game = env.paths.game_dir(&inst.id);
+
+    let cf = env.cf.ok_or_else(|| {
+        MicaError::Msg(
+            "CurseForge 需要 API Key：请在 设置 → 下载 中填写，或设置 CURSEFORGE_API_KEY".into(),
+        )
+    })?;
+
+    let mut ids: Vec<u64> = Vec::new();
+    if let Some(arr) = v.get("files").and_then(|x| x.as_array()) {
+        for f in arr {
+            if let Some(id) = f.get("fileID").and_then(|x| x.as_u64()) {
+                if id > 0 {
+                    ids.push(id);
+                }
+            }
+        }
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    progress.log(format!("解析 {} 个文件", ids.len()));
+    let resolved = cf.files_by_ids(&ids).await?;
+    let by_id: HashMap<u64, crate::curseforge::CfFile> =
+        resolved.into_iter().map(|f| (f.id, f)).collect();
+
+    let mods = game.join("mods");
+    let mut specs = Vec::new();
+    let mut manual = Vec::new();
+    if let Some(arr) = v.get("files").and_then(|x| x.as_array()) {
+        for f in arr {
+            let fid = f.get("fileID").and_then(|x| x.as_u64()).unwrap_or(0);
+            if fid == 0 {
+                manual.push("整合包内含自定义文件（fileID=0），需手动放入".to_string());
+                continue;
+            }
+            let Some(meta) = by_id.get(&fid) else {
+                manual.push(format!("fileID {fid} 无法解析"));
+                continue;
+            };
+            let url = match meta.download_url.clone() {
+                Some(u) if !u.is_empty() => Some(u),
+                _ => cf.download_url(meta).await.ok().flatten(),
+            };
+            let Some(url) = url else {
+                manual.push(meta.file_name.clone());
+                continue;
+            };
+            let Some(rel) = archive::safe_rel_path(&meta.file_name) else {
+                manual.push(meta.file_name.clone());
+                continue;
+            };
+            specs.push(FileSpec {
+                url,
+                dest: mods.join(rel),
+                sha1: meta.sha1().map(|s| s.to_string()),
+                size: if meta.file_length > 0 {
+                    Some(meta.file_length)
+                } else {
+                    None
+                },
+                label: meta.file_name.clone(),
+            });
+        }
+    }
+
+    let total_files = specs.len();
+    progress.log(format!("下载整合包文件 {total_files} 个"));
+    let (files, bytes) = download_many(env.http, specs, env.concurrency, progress).await?;
+
+    let overrides = v
+        .get("overrides")
+        .and_then(|x| x.as_str())
+        .unwrap_or("overrides");
+    let prefix = format!("{}/", overrides.trim_end_matches('/'));
+    let opts2 = ExtractOptions {
+        overwrite: opts.overwrite,
+        include_prefixes: Vec::new(),
+        strip_prefix: Some(prefix),
+    };
+    let stats = archive::extract_zip(file, &game, &opts2)?;
+
+    let mut notes = vec![format!("覆盖文件 {} 个", stats.files)];
+    if !manual.is_empty() {
+        notes.push(format!(
+            "{} 个文件需手动下载（作者关闭第三方分发或自定义文件）",
+            manual.len()
+        ));
+    }
+
+    Ok(PackInstallResult {
+        instance_id: inst.id,
+        instance_name: inst.name,
+        kind: "curseforge".into(),
+        mc_version: mc,
+        loader: loader_kind,
+        loader_version: loader_ver,
+        files: files + stats.files,
+        bytes,
+        manual,
+        notes,
+    })
+}
 async fn install_multimc(
     env: &PackEnv<'_>,
     file: &Path,

@@ -367,6 +367,55 @@ async fn import_installer(
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
+async fn cf_install_mod(
+    state: State<'_, Arc<AppState>>,
+    instance_id: String,
+    mod_id: u64,
+    file_id: u64,
+) -> CmdResult<serde_json::Value> {
+    let inst = Instance::load(&state.paths, &instance_id).map_err(|e| e.to_string())?;
+    let cf = cf_client(&state);
+    let file = cf.file(mod_id, file_id).await.map_err(|e| e.to_string())?;
+    let name = std::path::Path::new(&file.file_name)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| format!("cf-{file_id}.jar"));
+    let mods = state.paths.game_dir(&inst.id).join("mods");
+    std::fs::create_dir_all(&mods).map_err(|e| e.to_string())?;
+    let dest = mods.join(&name);
+
+    let url = cf.download_url(&file).await.map_err(|e| e.to_string())?;
+    let Some(_) = url else {
+        return Ok(serde_json::json!({
+            "ok": false, "manual": true, "fileName": name,
+            "sha1": file.sha1(), "opened": false,
+        }));
+    };
+
+    let backup = if dest.exists() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let bak = mods.join(format!("{name}.bak-{ts}"));
+        std::fs::rename(&dest, &bak).map_err(|e| e.to_string())?;
+        Some(bak.display().to_string())
+    } else {
+        None
+    };
+
+    let progress = state.progress("cf-install", "mod");
+    let size = cf
+        .download_file(&file, &dest, &progress)
+        .await
+        .map_err(|e| e.to_string())?;
+    let sha1 = crate::hash::sha1_file(&dest).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "ok": true, "fileName": name, "path": dest.display().to_string(),
+        "size": size, "sha1": sha1, "expectedSha1": file.sha1(), "backup": backup,
+    }))
+}
+#[tauri::command]
 async fn cf_project(
     state: State<'_, Arc<AppState>>,
     id: u64,
@@ -534,6 +583,7 @@ async fn install_modpack(
         mojang: &mojang,
         java: java.as_ref(),
         concurrency: s.settings().effective_concurrency(),
+        cf: Some(&crate::curseforge::CfClient::from_settings(&http, &s.settings())),
     };
     let opts = crate::modpack::PackOptions {
         name,
@@ -565,6 +615,7 @@ async fn install_modrinth_modpack(
         mojang: &mojang,
         java: java.as_ref(),
         concurrency: s.settings().effective_concurrency(),
+        cf: Some(&crate::curseforge::CfClient::from_settings(&http, &s.settings())),
     };
     let result =
         crate::modpack::install_modrinth_pack(&env, &slug, version_id.as_deref(), &progress)
@@ -1326,6 +1377,7 @@ pub fn run() {
             neoforge_versions,
             install_loader,
             import_installer,
+            cf_install_mod,
             cf_project,
             cf_files,
             cf_search,

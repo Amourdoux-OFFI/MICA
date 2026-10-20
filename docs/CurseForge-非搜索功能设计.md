@@ -1,6 +1,6 @@
 # CurseForge「不依赖搜索」功能设计
 
-> 状态：**设计已落盘，代码未开始**（2026-10-20）
+> 状态：**后端已实现并实测**（2026-10-20）：单 mod 安装、整合包 manifest 安装均通过；前端 Tab 待接入。
 > 背景：CF 组织 Key 已可读详情/文件/直链，但 `/v1/mods/search` 403，需等审核。
 > 本文覆盖此刻就能做、且不依赖搜索权限的部分。
 
@@ -134,3 +134,19 @@ CfHash { value, algo } // algo=1 sha1, algo=2 md5
 4. `cf_install_pack`（manifest → 批量 → overrides）
 5. 前端 CF Tab（Key 引导 + 详情 + 文件列表 + 安装）
 6. C29–C32 验证脚本 + 报告更新
+---
+
+## 11. 实施进度（2026-10-20）
+
+已完成并实测：
+
+- `curseforge.rs`：project / files / file / files_by_ids / download_url / search
+- 设置项 `curseforgeApiKey`（环境变量 `CURSEFORGE_API_KEY` 兜底）
+- 命令：`cf_project` / `cf_files` / `cf_search` / `cf_key_status` / `cf_install_mod`
+- CLI：`cf-key` / `cf-project` / `cf-files` / `cf-file` / `cf-download` / `cf-batch` / `cf-search` / `cf-install-mod`
+- `modpack::install_curseforge`：manifest → 批量文件 → 下载（SHA1）→ `overrides/` 解压；拖入 CF 包即可走通
+- 实测：
+  - 单 mod：JEI 1.20.1 Fabric → 6,928,778 B，SHA1 `cf661b88…` 一致
+  - 整合包（合成 manifest，真实 fileID）：instance `CF-Synth-Test`，fabric 0.16.10 / 1.20.1，mods + config override 均落盘，`manual` 为空
+
+待做：前端 CurseForge Tab（Key 输入、搜索、详情、文件列表、安装按钮）。
