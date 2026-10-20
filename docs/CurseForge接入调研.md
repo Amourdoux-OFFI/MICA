@@ -22,7 +22,7 @@
 | `GET /v1/mods/238222/files` | 200 | 文件列表 |
 | `POST /v1/mods/files`（批量 fileIds） | 200 | 整合包 manifest 解析用 |
 | `GET /v1/mods/{id}/files/{fileId}/download-url` | 200 | 返回 `edge.forgecdn.net` 直链 |
-| **`GET /v1/mods/search`** | **403** | body：`Forbidden: API Key missing or invalid`，`Server: Kestrel` |
+| **`GET /v1/mods/search`** | 403 → **200** | 创建 Key 后短时间 403，稍后自动生效（见下方复测） |
 
 补充验证：
 
@@ -67,3 +67,23 @@
 
 - Key 曾在聊天中出现，接入完成后在控制台 `Regenerate` 换新，并只写入本机设置。
 - 不要提交 `cf-key.txt`、`settings.json` 或任何含 Key 的日志。
+## 8. 补充：2026-10-20 晚复测（搜索已生效）
+
+Key 创建后有一段延迟，复测时 `GET /v1/mods/search` 已返回 200：
+
+| 查询 | total | 首条 |
+|---|---|---|
+| `jei`（mod） | 435 | Just Enough Items (JEI) |
+| `project infinity`（整合包） | 19 | Project Infinity 0.1 |
+| `all the mods`（整合包） | 1366 | All the Mods 10 - ATM10 |
+| `sodium` + 1.20.1 + Fabric | 130 | Sodium |
+
+后端已实现并通过 CLI 实测（`scripts/verify-cf.ps1`，C29–C32）：
+
+- `cf-project`：项目详情（JEI 238222）
+- `cf-files`：文件列表（含 SHA1）
+- `cf-download`：JEI 1.20.1 Fabric，6,928,778 B，SHA1 `cf661b88…` 与 API 一致
+- `cf-batch`：按 fileId 批量解析（整合包用）
+- `cf-search`：mod/整合包搜索 + 版本/加载器筛选
+
+待办：安装单 mod、整合包 manifest 安装、前端 CF Tab。

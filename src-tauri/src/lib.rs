@@ -1,8 +1,9 @@
-﻿//! MICA 启动器核心库。
+//! MICA 启动器核心库。
 
 pub mod app;
 pub mod archive;
 pub mod cli;
+pub mod curseforge;
 pub mod diagnostics;
 pub mod error;
 pub mod hash;

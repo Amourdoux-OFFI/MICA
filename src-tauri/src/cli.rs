@@ -1,4 +1,4 @@
-﻿//! 命令行驱动（用于自动化验收与排障）。
+//! 命令行驱动（用于自动化验收与排障）。
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -562,6 +562,106 @@ async fn run(raw: Vec<String>, data_dir: Option<PathBuf>, verbose: bool) -> Resu
                 "total": resp.total_hits,
                 "first": resp.hits.first().map(|h| h.slug.clone()),
                 "count": resp.hits.len(),
+            }))
+        }
+
+        "cf-key" => {
+            let cf = crate::curseforge::CfClient::from_settings(&ctx.http, &ctx.settings);
+            Ok(json!({
+                "ok": true,
+                "hasKey": cf.has_key(),
+                "source": if !ctx.settings.curseforge_api_key.trim().is_empty() { "settings" }
+                          else if std::env::var("CURSEFORGE_API_KEY").map(|v| !v.trim().is_empty()).unwrap_or(false) { "env" }
+                          else { "none" },
+            }))
+        }
+
+        "cf-search" => {
+            let ptype = args.pos(1).unwrap_or("mod");
+            let query = args.pos(2).unwrap_or("");
+            let q = crate::curseforge::CfSearchQuery {
+                query: query.to_string(),
+                project_type: ptype.to_string(),
+                game_version: args.get("game-version").map(|s| s.to_string()),
+                mod_loader_type: args.get("loader").and_then(|s| s.parse().ok()),
+                category_id: args.get("category").and_then(|s| s.parse().ok()),
+                sort_field: args.get("sort").and_then(|s| s.parse().ok()),
+                index: args.get("offset").and_then(|s| s.parse().ok()).unwrap_or(0),
+                page_size: args.get("limit").and_then(|s| s.parse().ok()).unwrap_or(10),
+            };
+            let cf = crate::curseforge::CfClient::from_settings(&ctx.http, &ctx.settings);
+            let resp = cf.search(&q).await?;
+            Ok(json!({
+                "ok": true,
+                "total": resp.pagination.total_count,
+                "count": resp.data.len(),
+                "projects": resp.data,
+            }))
+        }
+
+        "cf-batch" => {
+            let raw = args.pos(1).ok_or_else(|| MicaError::msg("缺少 fileId 列表"))?;
+            let ids: Vec<u64> = raw
+                .split(',')
+                .filter_map(|s| s.trim().parse::<u64>().ok())
+                .collect();
+            if ids.is_empty() {
+                return Err(MicaError::msg("fileId 列表为空"));
+            }
+            let cf = crate::curseforge::CfClient::from_settings(&ctx.http, &ctx.settings);
+            let files = cf.files_by_ids(&ids).await?;
+            Ok(json!({"ok": true, "count": files.len(), "files": files}))
+        }
+
+        "cf-project" => {
+            let id: u64 = args
+                .pos(1)
+                .ok_or_else(|| MicaError::msg("缺少项目 ID"))?
+                .parse()
+                .map_err(|_| MicaError::msg("项目 ID 必须是数字"))?;
+            let cf = crate::curseforge::CfClient::from_settings(&ctx.http, &ctx.settings);
+            let p = cf.project(id).await?;
+            Ok(json!({"ok": true, "project": p}))
+        }
+
+        "cf-files" => {
+            let mod_id: u64 = args
+                .pos(1)
+                .ok_or_else(|| MicaError::msg("缺少 modId"))?
+                .parse()
+                .map_err(|_| MicaError::msg("modId 必须是数字"))?;
+            let loader = args.get("loader").and_then(|s| s.parse::<u32>().ok());
+            let limit = args.get("limit").and_then(|s| s.parse().ok()).unwrap_or(20);
+            let cf = crate::curseforge::CfClient::from_settings(&ctx.http, &ctx.settings);
+            let list = cf.files(mod_id, args.get("game-version"), loader, limit).await?;
+            Ok(json!({"ok": true, "count": list.len(), "files": list}))
+        }
+
+        "cf-file" => {
+            let mod_id: u64 = args.pos(1).ok_or_else(|| MicaError::msg("缺少 modId"))?.parse()
+                .map_err(|_| MicaError::msg("modId 必须是数字"))?;
+            let file_id: u64 = args.pos(2).ok_or_else(|| MicaError::msg("缺少 fileId"))?.parse()
+                .map_err(|_| MicaError::msg("fileId 必须是数字"))?;
+            let cf = crate::curseforge::CfClient::from_settings(&ctx.http, &ctx.settings);
+            let f = cf.file(mod_id, file_id).await?;
+            let url = cf.download_url(&f).await?;
+            Ok(json!({"ok": true, "file": f, "downloadUrl": url}))
+        }
+
+        "cf-download" => {
+            let mod_id: u64 = args.pos(1).ok_or_else(|| MicaError::msg("缺少 modId"))?.parse()
+                .map_err(|_| MicaError::msg("modId 必须是数字"))?;
+            let file_id: u64 = args.pos(2).ok_or_else(|| MicaError::msg("缺少 fileId"))?.parse()
+                .map_err(|_| MicaError::msg("fileId 必须是数字"))?;
+            let dest = args.pos(3).ok_or_else(|| MicaError::msg("缺少目标路径"))?;
+            let cf = crate::curseforge::CfClient::from_settings(&ctx.http, &ctx.settings);
+            let f = cf.file(mod_id, file_id).await?;
+            let prog = ctx.progress("CurseForge", "下载");
+            let size = cf.download_file(&f, std::path::Path::new(dest), &prog).await?;
+            let sha1 = crate::hash::sha1_file(std::path::Path::new(dest))?;
+            Ok(json!({
+                "ok": true, "path": dest, "size": size, "sha1": sha1,
+                "expectedSha1": f.sha1(), "fileName": f.file_name,
             }))
         }
 

@@ -1,4 +1,4 @@
-﻿//! 全局设置（<root>/settings.json）。
+//! 全局设置（<root>/settings.json）。
 
 use std::path::Path;
 
@@ -33,6 +33,8 @@ pub struct Settings {
     pub last_game_version: String,
     /// 关闭窗口时最小化到任务栏
     pub close_to_tray: bool,
+    /// CurseForge API Key（仅存本机；也可用环境变量 CURSEFORGE_API_KEY）
+    pub curseforge_api_key: String,
 }
 
 impl Default for Settings {
@@ -50,6 +52,7 @@ impl Default for Settings {
             show_snapshots: false,
             last_game_version: "1.20.1".into(),
             close_to_tray: false,
+            curseforge_api_key: String::new(),
         }
     }
 }

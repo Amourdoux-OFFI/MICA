@@ -1,4 +1,4 @@
-﻿//! HTTP 客户端：统一 UA、重试、镜像重写、断点续传下载。
+//! HTTP 客户端：统一 UA、重试、镜像重写、断点续传下载。
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -44,6 +44,11 @@ impl HttpClient {
     }
 
     /// 将官方地址重写为镜像地址（仅 bmclapi 模式）。
+    /// 复用底层 reqwest 客户端（带代理/UA 配置），供需要自定义头的 API 使用。
+    pub fn raw(&self) -> &reqwest::Client {
+        &self.client
+    }
+
     pub fn apply_mirror(&self, url: &str) -> String {
         if self.mirror != "bmclapi" {
             return url.to_string();

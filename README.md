@@ -26,7 +26,7 @@ server packs and one-click localization.
 | Modrinth 内容中心 | ✅ | Mod / 整合包 / 资源包 / 光影 / 数据包；搜索、分类、加载器、游戏版本筛选、排序、分页 |
 | 整合包安装 | ✅ | `.mrpack` 远程/拖入、MultiMC/Prism 实例包、通用 zip（覆盖策略）；CurseForge 包**识别但暂缓安装** |
 | Java 管理 | ✅ | 自动探测（PATH/注册表/常见目录/托管目录）+ 按 `javaVersion` 匹配 + Mojang 运行时（快）+ Adoptium JDK 兜底 |
-| CurseForge | 🧩 授权中 | API Key 已可读项目/文件/下载直链；`mods/search` 需 CurseForge 审核开通，申请材料见 [docs/CurseForge-API申请.md](docs/CurseForge-API申请.md) |
+| CurseForge | 🚧 后端已通 | 搜索/详情/文件/批量/下载直链均已实测（C29–C32）；安装与前端 Tab 接入中 |
 | 联机 | 🧩 空壳 | 路由与能力位预留（`MultiplayerService`），无死按钮 |
 
 ---

@@ -1,4 +1,4 @@
-﻿//! Tauri 应用层：命令、事件、窗口。
+//! Tauri 应用层：命令、事件、窗口。
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
@@ -366,6 +366,53 @@ async fn import_installer(
 // 内容中心（Modrinth）
 // ---------------------------------------------------------------------------
 
+#[tauri::command]
+async fn cf_project(
+    state: State<'_, Arc<AppState>>,
+    id: u64,
+) -> CmdResult<crate::curseforge::CfProject> {
+    let cf = cf_client(&state);
+    cf.project(id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cf_files(
+    state: State<'_, Arc<AppState>>,
+    mod_id: u64,
+    game_version: Option<String>,
+    loader_type: Option<u32>,
+    page_size: Option<u32>,
+) -> CmdResult<Vec<crate::curseforge::CfFile>> {
+    let cf = cf_client(&state);
+    cf.files(
+        mod_id,
+        game_version.as_deref(),
+        loader_type,
+        page_size.unwrap_or(30),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cf_search(
+    state: State<'_, Arc<AppState>>,
+    query: crate::curseforge::CfSearchQuery,
+) -> CmdResult<crate::curseforge::CfSearchResponse> {
+    let cf = cf_client(&state);
+    cf.search(&query).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cf_key_status(state: State<'_, Arc<AppState>>) -> CmdResult<bool> {
+    Ok(cf_client(&state).has_key())
+}
+
+fn cf_client(state: &AppState) -> crate::curseforge::CfClient {
+    let settings = state.settings.read().unwrap();
+    let http = state.http.read().unwrap();
+    crate::curseforge::CfClient::from_settings(&http, &settings)
+}
 #[tauri::command]
 async fn modrinth_search(
     state: State<'_, Arc<AppState>>,
@@ -1279,6 +1326,10 @@ pub fn run() {
             neoforge_versions,
             install_loader,
             import_installer,
+            cf_project,
+            cf_files,
+            cf_search,
+            cf_key_status,
             modrinth_search,
             modrinth_project,
             modrinth_versions,
