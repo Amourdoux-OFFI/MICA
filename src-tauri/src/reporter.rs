@@ -25,6 +25,16 @@ struct Inner {
     last: Mutex<Instant>,
 }
 
+impl Drop for Inner {
+    fn drop(&mut self) {
+        // 任务对象释放时发一次 100% 收尾，避免任务面板常驻“进行中”
+        let total = self.total.load(Ordering::Relaxed);
+        let (done, total) = if total > 0 { (total, total) } else { (1, 1) };
+        self.reporter
+            .progress(&self.task, "done", done, total, "任务结束");
+    }
+}
+
 /// 一次安装/下载任务的进度计数器（Arc 共享，可克隆进并发任务）。
 #[derive(Clone)]
 pub struct Progress {

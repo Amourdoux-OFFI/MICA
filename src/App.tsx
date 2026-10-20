@@ -124,7 +124,7 @@ export default function App() {
       const r = await api.installModpack(pending.path, packName || pending.info.name, undefined, overwrite);
       toast(`已安装「${r.instanceName}」：${r.files} 个文件`, "success");
       if (r.manual.length > 0) {
-        toast(`有 ${r.manual.length} 个文件需要手动下载，详见安装结果`, "error");
+        toast(`需手动下载：${r.manual.slice(0, 3).join("、")}${r.manual.length > 3 ? ` 等 ${r.manual.length} 个` : ""}`, "error");
       }
       setPending(null);
       await refresh();
