@@ -1,0 +1,10 @@
+﻿import { chromium } from "playwright-core";
+const b = await chromium.launch({ channel: "chrome", headless: true });
+const p = await b.newPage({ viewport: { width: 1280, height: 820 } });
+await p.goto("http://localhost:4173/", { waitUntil: "networkidle" });
+await p.locator("aside button", { hasText: "设置" }).first().click();
+await p.waitForTimeout(400);
+await p.getByRole("button", { name: "浅色" }).click();
+await p.waitForTimeout(900);
+await p.screenshot({ path: "D:\\Desktop\\DSH\\MICA\\.data\\ui\\u13b-light.png" });
+await b.close();

@@ -1,0 +1,55 @@
+[package]
+name = "mica"
+version = "0.1.0"
+description = "MICA — a minimal Minecraft launcher"
+authors = ["MICA"]
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "mica_lib"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "mica"
+path = "src/main.rs"
+
+[[bin]]
+name = "mica-cli"
+path = "src/bin/mica-cli.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", default-features = false, features = ["wry", "compression", "common-controls-v6"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process", "sync", "time"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "native-tls", "charset", "http2"] }
+futures-util = "0.3"
+sha1 = "0.10"
+sha2 = "0.10"
+md-5 = "0.10"
+hex = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+encoding_rs = "0.8"
+thiserror = "2"
+regex = "1"
+walkdir = "2"
+urlencoding = "2"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem", "Win32_System_SystemInformation"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
