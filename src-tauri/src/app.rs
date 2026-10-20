@@ -674,6 +674,52 @@ async fn detect_modpack(
 // 启动
 // ---------------------------------------------------------------------------
 
+fn window_mode(paths: &crate::paths::Paths, inst: &Instance, settings: &crate::settings::Settings) -> (u32, u32) {
+    let (mut w, mut h, full) = match settings.game_window.as_str() {
+        "small" => (854, 480, false),
+        "fullscreen" => {
+            #[cfg(windows)]
+            unsafe {
+                use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+                let sw = GetSystemMetrics(SM_CXSCREEN);
+                let sh = GetSystemMetrics(SM_CYSCREEN);
+                if sw > 0 && sh > 0 { (sw as u32, sh as u32, true) } else { (1920, 1080, true) }
+            }
+            #[cfg(not(windows))]
+            { (1920, 1080, true) }
+        }
+        _ => (1280, 720, false),
+    };
+    if w < 320 { w = 854; }
+    if h < 240 { h = 480; }
+    let opt = paths.game_dir(&inst.id).join("options.txt");
+    let _ = set_fullscreen_option(&opt, full);
+    (w, h)
+}
+
+fn set_fullscreen_option(path: &std::path::Path, full: bool) -> std::io::Result<()> {
+    let mut lines: Vec<String> = std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .map(|s| s.to_string())
+        .collect();
+    let want = format!("fullscreen:{}", if full { "true" } else { "false" });
+    let mut found = false;
+    for l in lines.iter_mut() {
+        if l.starts_with("fullscreen:") {
+            *l = want.clone();
+            found = true;
+        }
+    }
+    if !found {
+        lines.push(want);
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(path, lines.join("\n"))?;
+    Ok(())
+}
 #[tauri::command]
 async fn launch_instance(
     state: State<'_, Arc<AppState>>,
@@ -702,6 +748,7 @@ async fn launch_instance(
         .split_whitespace()
         .map(|x| x.to_string())
         .collect();
+    let win = window_mode(&state.paths, &inst, &state.settings());
     let cfg = crate::launch::LaunchConfig {
         version_id: &vid,
         instance_id: &inst.id,
@@ -709,8 +756,8 @@ async fn launch_instance(
         memory_mb: inst.max_memory_mb,
         extra_jvm_args: &extra,
         java: &java,
-        width: 854,
-        height: 480,
+        width: win.0,
+        height: win.1,
     };
     let plan = crate::launch::build_plan(&s.paths, &chain, &cfg).map_err(|e| e.to_string())?;
 
@@ -788,6 +835,7 @@ async fn instance_plan(
         .await
         .map_err(|e| e.to_string())?;
     let chain = mojang.chain(&vid).await.map_err(|e| e.to_string())?;
+    let win = window_mode(&state.paths, &inst, &state.settings());
     let cfg = crate::launch::LaunchConfig {
         version_id: &vid,
         instance_id: &inst.id,
@@ -795,8 +843,8 @@ async fn instance_plan(
         memory_mb: inst.max_memory_mb,
         extra_jvm_args: &[],
         java: &java,
-        width: 854,
-        height: 480,
+        width: win.0,
+        height: win.1,
     };
     crate::launch::build_plan(&state.paths, &chain, &cfg).map_err(|e| e.to_string())
 }

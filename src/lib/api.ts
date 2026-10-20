@@ -181,6 +181,7 @@ export interface Settings {
   lastGameVersion: string;
   closeToTray: boolean;
   curseforgeApiKey: string;
+  gameWindow: string;
 }
 
 export interface CfProject {

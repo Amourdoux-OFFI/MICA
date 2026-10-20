@@ -148,6 +148,17 @@ export default function SettingsPage() {
             ))}
           </div>
         </Field>
+        <Field label="启动时游戏窗口">
+          <select
+            className="input w-[240px]"
+            value={draft.gameWindow ?? "windowed"}
+            onChange={(e) => patch({ gameWindow: e.target.value })}
+          >
+            <option value="small">小窗口（854×480）</option>
+            <option value="windowed">窗口化（1280×720）</option>
+            <option value="fullscreen">全屏</option>
+          </select>
+        </Field>
         <Field label="显示快照版本">
           <Toggle value={draft.showSnapshots} onChange={(v) => patch({ showSnapshots: v })} />
         </Field>

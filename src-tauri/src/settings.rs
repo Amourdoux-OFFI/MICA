@@ -35,6 +35,8 @@ pub struct Settings {
     pub close_to_tray: bool,
     /// CurseForge API Key（仅存本机；也可用环境变量 CURSEFORGE_API_KEY）
     pub curseforge_api_key: String,
+    /// 启动窗口：small | windowed | fullscreen
+    pub game_window: String,
 }
 
 impl Default for Settings {
@@ -53,6 +55,7 @@ impl Default for Settings {
             last_game_version: "1.20.1".into(),
             close_to_tray: false,
             curseforge_api_key: String::new(),
+            game_window: "windowed".into(),
         }
     }
 }
