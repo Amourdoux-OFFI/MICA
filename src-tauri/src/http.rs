@@ -227,7 +227,6 @@ impl HttpClient {
                 .open(part)
                 .await?
         } else {
-            prog.set_done(0);
             tokio::fs::File::create(part).await?
         };
 

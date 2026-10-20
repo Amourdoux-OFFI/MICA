@@ -70,7 +70,6 @@ impl AppState {
         self.settings.read().unwrap().clone()
     }
     fn progress(&self, task: impl Into<String>, phase: impl Into<String>) -> Progress {
-        crate::http::clear_cancel();
         Progress::new(self.reporter.clone(), task.into(), phase.into())
     }
     fn emit(&self, event: &str, payload: serde_json::Value) {
@@ -103,6 +102,11 @@ async fn app_info(state: State<'_, Arc<AppState>>) -> CmdResult<AppInfo> {
         java_count,
         os: std::env::consts::OS.to_string(),
     })
+}
+
+#[tauri::command]
+fn play_stats(state: State<'_, Arc<AppState>>) -> crate::instances::PlayStats {
+    crate::instances::play_stats(&state.paths)
 }
 
 #[tauri::command]
@@ -229,6 +233,7 @@ async fn install_vanilla(
     mc: String,
     instance_name: Option<String>,
 ) -> CmdResult<Instance> {
+    crate::http::clear_cancel();
     let s = state.inner().clone();
     let progress = s.progress(format!("install-{mc}"), "vanilla");
     let mojang = Mojang::new(s.http(), s.paths.clone());
@@ -306,6 +311,7 @@ async fn install_loader(
     version: Option<String>,
     instance_name: Option<String>,
 ) -> CmdResult<Instance> {
+    crate::http::clear_cancel();
     let s = state.inner().clone();
     let http = s.http();
     let mojang = Mojang::new(http.clone(), s.paths.clone());
@@ -401,6 +407,7 @@ async fn cf_install_mod(
     mod_id: u64,
     file_id: u64,
 ) -> CmdResult<serde_json::Value> {
+    crate::http::clear_cancel();
     let inst = Instance::load(&state.paths, &instance_id).map_err(|e| e.to_string())?;
     let cf = cf_client(&state);
     let file = cf.file(mod_id, file_id).await.map_err(|e| e.to_string())?;
@@ -600,6 +607,7 @@ async fn install_modpack(
     instance_id: Option<String>,
     overwrite: bool,
 ) -> CmdResult<crate::modpack::PackInstallResult> {
+    crate::http::clear_cancel();
     let s = state.inner().clone();
     let http = s.http();
     let mojang = Mojang::new(http.clone(), s.paths.clone());
@@ -632,6 +640,7 @@ async fn install_modrinth_modpack(
     slug: String,
     version_id: Option<String>,
 ) -> CmdResult<crate::modpack::PackInstallResult> {
+    crate::http::clear_cancel();
     let s = state.inner().clone();
     let http = s.http();
     let mojang = Mojang::new(http.clone(), s.paths.clone());
@@ -728,6 +737,7 @@ async fn launch_instance(
         }
         match outcome {
             Ok(o) => {
+                let _ = crate::instances::add_playtime(&state2.paths, &inst_id2, o.seconds.max(0.0) as u64);
                 let _ = app.emit(
                     "launch://exit",
                     json!({
@@ -826,6 +836,7 @@ async fn java_install(
     state: State<'_, Arc<AppState>>,
     major: u32,
 ) -> CmdResult<JavaRuntime> {
+    crate::http::clear_cancel();
     let progress = state.progress(format!("java-{major}"), "download");
     let http = state.http();
     let paths = state.paths.clone();
@@ -1409,6 +1420,7 @@ pub fn run() {
             app_info,
             cancel_task,
             open_url,
+            play_stats,
             get_settings,
             save_settings,
             list_versions,

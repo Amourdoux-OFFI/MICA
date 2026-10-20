@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import {
   Compass,
   DownloadCloud,
@@ -23,6 +23,26 @@ import InstancePage from "@/pages/InstanceDetail";
 import MultiplayerPage from "@/pages/Multiplayer";
 import SettingsPage from "@/pages/Settings";
 import ServersPage from "@/pages/Servers";
+
+function GlobalTaskBar() {
+  const tasks = useApp((s) => s.tasks);
+  const list = Object.values(tasks).filter((t) => !t.finishedAt);
+  if (list.length === 0) return null;
+  const t = list[list.length - 1];
+  const pct = t.total > 0 ? Math.min(100, (t.done / t.total) * 100) : 0;
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-[70] flex justify-center px-3 pt-2">
+      <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-1.5 shadow-pop">
+        <span className="max-w-[180px] truncate text-[12px] font-medium">{t.key}</span>
+        <span className="text-[11px] muted">{t.phase}</span>
+        <div className="h-1.5 w-40 overflow-hidden rounded-full bg-white/10">
+          <div className="h-full bg-brand-400 transition-all" style={{ width: `${pct}%` }} />
+        </div>
+        <span className="w-10 text-right text-[11px] tabular-nums">{pct.toFixed(0)}%</span>
+      </div>
+    </div>
+  );
+}
 
 const NAV: { key: Page; label: string; icon: typeof Home }[] = [
   { key: "home", label: "启动", icon: Home },
@@ -69,6 +89,20 @@ export default function App() {
           return;
         }
         const info = await api.detectModpack(file);
+        if (!info.supported || info.kind === "unknown") {
+          const target = useApp.getState().instanceId ?? useApp.getState().instances[0]?.id;
+          if (target) {
+            try {
+              const r = await api.applyLocalization(target, file);
+              toast(`已应用汉化：覆盖 ${r.record.replaced} 个文件，新增 ${r.record.added} 个`, "success");
+              return;
+            } catch {
+              /* 不是汉化包，继续提示 */
+            }
+          }
+          toast("识别不出这个压缩包：整合包请拖 .zip/.mrpack；汉化包请到「实例 → 汉化」应用", "error");
+          return;
+        }
         setPackName(info.name);
         setPending({ path: file, info });
       } else {
@@ -104,6 +138,7 @@ export default function App() {
 
   return (
     <div className="flex h-full w-full overflow-hidden">
+      <GlobalTaskBar />
       <aside className="flex w-[76px] shrink-0 flex-col items-center gap-1 border-r border-[var(--border)] bg-[var(--surface)] py-3">
         <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500/15">
           <Compass size={20} className="text-brand-400" />

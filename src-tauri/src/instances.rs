@@ -1,5 +1,6 @@
-﻿//! 实例模型与磁盘管理。
+//! 实例模型与磁盘管理。
 
+use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -236,3 +237,50 @@ pub fn toggle_mod(paths: &Paths, id: &str, file_name: &str, enabled: bool) -> Re
     Ok(())
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayStats {
+    /// 历史累计秒数：包含已删除/归档实例，永不回退
+    #[serde(default)]
+    pub total_seconds: u64,
+    /// 按实例累计（实例删除后条目保留）
+    #[serde(default)]
+    pub instances: HashMap<String, u64>,
+}
+
+pub fn play_stats(paths: &Paths) -> PlayStats {
+    let p = paths.root.join("play-stats.json");
+    std::fs::read_to_string(&p)
+        .ok()
+        .and_then(|s| serde_json::from_str(s.trim_start_matches('\u{feff}')).ok())
+        .unwrap_or_default()
+}
+
+fn save_play_stats(paths: &Paths, stats: &PlayStats) -> Result<()> {
+    let p = paths.root.join("play-stats.json");
+    let tmp = p.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(stats)?)?;
+    std::fs::rename(&tmp, &p)?;
+    Ok(())
+}
+
+/// 累计游玩时长：实例 + 全局各记一份；删除实例不影响全局。
+pub fn add_playtime(paths: &Paths, id: &str, seconds: u64) -> Result<()> {
+    if seconds == 0 {
+        return Ok(());
+    }
+    if let Ok(mut inst) = Instance::load(paths, id) {
+        inst.total_play_seconds = inst.total_play_seconds.saturating_add(seconds);
+        inst.last_played = Some(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+        );
+        inst.save(paths)?;
+    }
+    let mut stats = play_stats(paths);
+    stats.total_seconds = stats.total_seconds.saturating_add(seconds);
+    *stats.instances.entry(id.to_string()).or_insert(0) += seconds;
+    save_play_stats(paths, &stats)
+}
