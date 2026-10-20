@@ -44,7 +44,8 @@ impl HttpClient {
         let mut b = reqwest::Client::builder()
             .user_agent(UA)
             .connect_timeout(Duration::from_secs(15))
-            .timeout(Duration::from_secs(1800))
+            .read_timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(900))
             .pool_max_idle_per_host(32)
             .tcp_nodelay(true);
 

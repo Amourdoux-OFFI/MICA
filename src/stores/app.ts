@@ -138,7 +138,7 @@ export const useApp = create<State>((set, get) => ({
             message: t.message,
             startedAt: prev?.startedAt ?? Date.now(),
             logs: prev?.logs ?? [],
-            finishedAt: undefined,
+            finishedAt: t.total > 0 && t.done >= t.total ? Date.now() : undefined,
           },
         },
       };
