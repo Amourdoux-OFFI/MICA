@@ -419,13 +419,11 @@ async fn cf_install_mod(
     std::fs::create_dir_all(&mods).map_err(|e| e.to_string())?;
     let dest = mods.join(&name);
 
-    let url = cf.download_url(&file).await.map_err(|e| e.to_string())?;
-    let Some(_) = url else {
-        return Ok(serde_json::json!({
-            "ok": false, "manual": true, "fileName": name,
-            "sha1": file.sha1(), "opened": false,
-        }));
-    };
+    let url = cf
+        .download_url(&file)
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or_else(|| file.cdn_url());
 
     let backup = if dest.exists() {
         let ts = std::time::SystemTime::now()
@@ -440,8 +438,9 @@ async fn cf_install_mod(
     };
 
     let progress = state.progress("cf-install", "mod");
-    let size = cf
-        .download_file(&file, &dest, &progress)
+    let size = state
+        .http()
+        .download(&url, &dest, file.sha1(), Some(file.file_length), &progress)
         .await
         .map_err(|e| e.to_string())?;
     let sha1 = crate::hash::sha1_file(&dest).map_err(|e| e.to_string())?;

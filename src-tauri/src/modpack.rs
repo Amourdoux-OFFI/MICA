@@ -523,7 +523,12 @@ async fn install_curseforge(
             };
             let url = match meta.download_url.clone() {
                 Some(u) if !u.is_empty() => Some(u),
-                _ => cf.download_url(meta).await.ok().flatten(),
+                _ => cf
+                    .download_url(meta)
+                    .await
+                    .ok()
+                    .flatten()
+                    .or_else(|| Some(meta.cdn_url())),
             };
             let Some(url) = url else {
                 manual.push(meta.file_name.clone());

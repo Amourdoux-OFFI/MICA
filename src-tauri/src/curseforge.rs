@@ -123,6 +123,16 @@ pub struct CfDependency {
 }
 
 impl CfFile {
+    /// 由 fileID + 文件名推导 ForgeCDN 直链（作者关闭 downloadUrl 时尝试）。
+    pub fn cdn_url(&self) -> String {
+        let dir = self.id / 1000;
+        let rem = self.id % 1000;
+        format!(
+            "https://edge.forgecdn.net/files/{dir}/{rem}/{}",
+            urlencoding::encode(&self.file_name)
+        )
+    }
+
     pub fn sha1(&self) -> Option<&str> {
         self.hashes
             .iter()
