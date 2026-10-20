@@ -86,6 +86,8 @@ export default function DownloadPage() {
 
 function ContentBrowser({ type }: { type: Exclude<TabKey, "versions" | "curseforge"> }) {
   const installed = useApp((s) => s.instances);
+  const setTab = useApp((s) => s.setDownloadTab);
+  const setCfQuery = useApp((s) => s.setCfQuery);
   const target = useApp((s) => s.installTarget);
   const setTarget = useApp((s) => s.setInstallTarget);
   const toast = useApp((s) => s.toast);
@@ -283,14 +285,22 @@ function ContentBrowser({ type }: { type: Exclude<TabKey, "versions" | "cursefor
                   </button>
                 )}
                 <button
+                  className="btn btn-sm btn-primary"
+                  onClick={() => {
+                    setCfQuery(query || "project infinity");
+                    setTab("curseforge");
+                  }}
+                >
+                  去 CurseForge 搜索「{query || "project infinity"}」
+                </button>
+                <button
                   className="btn btn-sm"
                   onClick={async () => {
                     if (!isTauri()) {
                       toast("浏览器预览模式下无法打开", "info");
                       return;
                     }
-                    const { openUrl } = await import("@tauri-apps/plugin-opener");
-                    await openUrl(`https://modrinth.com/${type === "modpack" ? "modpacks" : type + "s"}?query=${encodeURIComponent(query)}`);
+                    await api.openUrl(`https://modrinth.com/${type === "modpack" ? "modpacks" : type + "s"}?query=${encodeURIComponent(query)}`);
                   }}
                 >
                   在 Modrinth 网页继续搜索
@@ -847,8 +857,9 @@ const CF_TYPES: { key: string; label: string }[] = [
 function CurseForgeTab() {
   const toast = useApp((s) => s.toast);
   const [keyOk, setKeyOk] = useState<boolean | null>(null);
+  const cfQuery = useApp((s) => s.cfQuery);
   const [type, setType] = useState("modpack");
-  const [query, setQuery] = useState("project infinity");
+  const [query, setQuery] = useState(cfQuery || "project infinity");
   const [hits, setHits] = useState<CfProject[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -871,6 +882,14 @@ function CurseForgeTab() {
     },
     [query, type, toast]
   );
+
+  useEffect(() => {
+    if (cfQuery && cfQuery !== query) {
+      setQuery(cfQuery);
+      void run(cfQuery);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfQuery]);
 
   useEffect(() => {
     api
@@ -1020,7 +1039,7 @@ function CfDetail({ project, onClose }: { project: CfProject; onClose: () => voi
           {project.links?.websiteUrl && (
             <button
               className="inline-flex items-center gap-1 text-brand-300 hover:underline"
-              onClick={() => void import("@tauri-apps/plugin-opener").then((m) => m.openUrl(project.links!.websiteUrl!)).catch(() => toast("仅桌面端可打开", "info"))}
+              onClick={() => void api.openUrl(project.links!.websiteUrl!).catch(() => toast("仅桌面端可打开", "info"))}
             >
               <ExternalLink size={12} /> 项目页
             </button>

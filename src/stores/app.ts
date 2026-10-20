@@ -1,4 +1,4 @@
-﻿import { create } from "zustand";
+import { create } from "zustand";
 import { api, type Instance, type JavaRuntime, type Settings } from "@/lib/api";
 
 export type Page = "home" | "download" | "instance" | "servers" | "multiplayer" | "settings";
@@ -29,6 +29,7 @@ interface State {
   tasks: Record<string, Task>;
   toasts: Toast[];
   downloadTab: string;
+  cfQuery: string;
   dlGameVersion: string;
   dlLoader: string;
   installTarget: string | null;
@@ -51,6 +52,7 @@ interface State {
   toast: (text: string, kind?: Toast["kind"]) => void;
   dismissToast: (id: number) => void;
   setDownloadTab: (t: string) => void;
+  setCfQuery: (q: string) => void;
   setDlGameVersion: (v: string) => void;
   setDlLoader: (v: string) => void;
   setInstallTarget: (id: string | null) => void;
@@ -70,6 +72,7 @@ export const useApp = create<State>((set, get) => ({
   tasks: {},
   toasts: [],
   downloadTab: "modpack",
+  cfQuery: "",
   dlGameVersion: "1.20.1",
   dlLoader: "fabric",
   installTarget: null,
@@ -165,6 +168,7 @@ export const useApp = create<State>((set, get) => ({
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
   setDownloadTab: (t) => set({ downloadTab: t }),
+  setCfQuery: (q) => set({ cfQuery: q }),
   setDlGameVersion: (v) => set({ dlGameVersion: v }),
   setDlLoader: (v) => set({ dlLoader: v }),
   setInstallTarget: (id) => set({ installTarget: id }),

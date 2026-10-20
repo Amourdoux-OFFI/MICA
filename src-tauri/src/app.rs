@@ -106,6 +106,26 @@ async fn app_info(state: State<'_, Arc<AppState>>) -> CmdResult<AppInfo> {
 }
 
 #[tauri::command]
+fn open_url(url: String) -> CmdResult<()> {
+    let u = url.trim();
+    if !(u.starts_with("https://") || u.starts_with("http://")) {
+        return Err("仅支持 http(s) 链接".into());
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", u])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("xdg-open").arg(u).spawn().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn cancel_task() -> CmdResult<bool> {
     crate::http::request_cancel();
     Ok(true)
@@ -1388,6 +1408,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_info,
             cancel_task,
+            open_url,
             get_settings,
             save_settings,
             list_versions,

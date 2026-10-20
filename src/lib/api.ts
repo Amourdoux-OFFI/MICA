@@ -395,6 +395,7 @@ export const api = {
   javaInstall: (major: number) => call<JavaRuntime>("java_install", { major }),
   javaCancel: () => call<boolean>("java_cancel"),
   cancelTask: () => call<boolean>("cancel_task"),
+  openUrl: (url: string) => call<void>("open_url", { url }),
 
   servers: () => call<ServerInfo[]>("list_servers"),
   detectServerPack: (path: string) => call<ServerPackInfo>("detect_server_pack", { path }),
