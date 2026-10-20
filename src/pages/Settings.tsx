@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Coffee,
+  RefreshCw,
   DownloadCloud,
   FolderOpen,
   Globe,
@@ -36,6 +37,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [info, setInfo] = useState<{ version: string; dataDir: string } | null>(null);
   const [installing, setInstalling] = useState<number | null>(null);
+  const [javaBusy, setJavaBusy] = useState(false);
   const [diag, setDiag] = useState<Diagnostics | null>(null);
   const [diagBusy, setDiagBusy] = useState(false);
 
@@ -64,6 +66,16 @@ export default function SettingsPage() {
       toast(String(e), "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const refreshJava = async () => {
+    setJavaBusy(true);
+    try {
+      await loadJava();
+      toast(`检测完成：${java.length} 个 Java`, "success");
+    } finally {
+      setJavaBusy(false);
     }
   };
 
@@ -203,7 +215,18 @@ export default function SettingsPage() {
       </Section>
 
       <Section icon={<Coffee size={15} />} title="Java 管理">
-        <div className="mb-3 flex flex-wrap gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {installing !== null && (
+            <button
+              className="btn btn-sm border-red-500/40 text-red-300"
+              onClick={async () => {
+                const ok = await api.javaCancel().catch(() => false);
+                toast(ok ? "已取消下载" : "没有正在进行的下载", "info");
+              }}
+            >
+              取消下载
+            </button>
+          )}
           {JDK_CHOICES.map((j) => (
             <button
               key={j.major}
@@ -216,10 +239,16 @@ export default function SettingsPage() {
               <span className="ml-1 text-[10px] opacity-50">{j.hint}</span>
             </button>
           ))}
+          <button className="btn btn-sm" disabled={javaBusy} onClick={() => void refreshJava()}>
+            {javaBusy ? <Spinner /> : <RefreshCw size={12} />}
+            重新检测本机 Java
+          </button>
         </div>
         <div className="overflow-hidden rounded-lg border border-[var(--border)]">
           {java.length === 0 ? (
-            <div className="px-3 py-6 text-center text-[12px] muted">未检测到 Java</div>
+            <div className="px-3 py-6 text-center text-[12px] muted">
+              {javaBusy ? "正在检测本机 Java…" : "未检测到 Java；点上方「重新检测本机 Java」，或直接安装一个"}
+            </div>
           ) : (
             java.map((j) => (
               <div

@@ -16,6 +16,23 @@ use crate::settings::Settings;
 
 pub const UA: &str = "MICA-Launcher/0.1 (+https://github.com/mica-launcher)";
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static CANCEL: AtomicBool = AtomicBool::new(false);
+
+/// 请求取消当前批量下载/安装（下一次分块检查时生效）。
+pub fn request_cancel() {
+    CANCEL.store(true, Ordering::SeqCst);
+}
+
+pub fn clear_cancel() {
+    CANCEL.store(false, Ordering::SeqCst);
+}
+
+pub fn is_cancelled() -> bool {
+    CANCEL.load(Ordering::SeqCst)
+}
+
 #[derive(Clone)]
 pub struct HttpClient {
     client: reqwest::Client,
@@ -216,6 +233,9 @@ impl HttpClient {
 
         let mut stream = resp.bytes_stream();
         while let Some(chunk) = stream.next().await {
+            if is_cancelled() {
+                return Err(MicaError::Msg("下载已取消".into()));
+            }
             let chunk = chunk.map_err(|e| MicaError::Http(format!("读取响应失败：{e}")))?;
             file.write_all(&chunk).await?;
             prog.inc(chunk.len() as u64);

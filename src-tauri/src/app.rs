@@ -57,6 +57,7 @@ pub struct AppState {
     pub reporter: Arc<GuiReporter>,
     pub running: Mutex<HashMap<String, u32>>,
     pub java_cache: RwLock<Vec<JavaRuntime>>,
+    pub java_task: Mutex<Option<tokio::task::AbortHandle>>,
     pub servers_running: Mutex<HashMap<String, ServerHandle>>,
     pub server_logs: Mutex<HashMap<String, Vec<String>>>,
 }
@@ -69,6 +70,7 @@ impl AppState {
         self.settings.read().unwrap().clone()
     }
     fn progress(&self, task: impl Into<String>, phase: impl Into<String>) -> Progress {
+        crate::http::clear_cancel();
         Progress::new(self.reporter.clone(), task.into(), phase.into())
     }
     fn emit(&self, event: &str, payload: serde_json::Value) {
@@ -101,6 +103,12 @@ async fn app_info(state: State<'_, Arc<AppState>>) -> CmdResult<AppInfo> {
         java_count,
         os: std::env::consts::OS.to_string(),
     })
+}
+
+#[tauri::command]
+fn cancel_task() -> CmdResult<bool> {
+    crate::http::request_cancel();
+    Ok(true)
 }
 
 #[tauri::command]
@@ -799,9 +807,24 @@ async fn java_install(
     major: u32,
 ) -> CmdResult<JavaRuntime> {
     let progress = state.progress(format!("java-{major}"), "download");
-    java::install_adoptium(&state.http(), &state.paths, major, &progress)
-        .await
-        .map_err(|e| e.to_string())
+    let http = state.http();
+    let paths = state.paths.clone();
+    let handle = tokio::spawn(async move {
+        java::install_adoptium(&http, &paths, major, &progress).await
+    });
+    *state.java_task.lock().unwrap() = Some(handle.abort_handle());
+    let result = handle.await.map_err(|e| format!("Java 下载被取消或失败：{e}"))?;
+    *state.java_task.lock().unwrap() = None;
+    result.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn java_cancel(state: State<'_, Arc<AppState>>) -> CmdResult<bool> {
+    if let Some(handle) = state.java_task.lock().unwrap().take() {
+        handle.abort();
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 #[tauri::command]
@@ -1352,6 +1375,7 @@ pub fn run() {
                 reporter,
                 running: Mutex::new(HashMap::new()),
                 java_cache: RwLock::new(Vec::new()),
+                java_task: Mutex::new(None),
                 servers_running: Mutex::new(HashMap::new()),
                 server_logs: Mutex::new(HashMap::new()),
             });
@@ -1363,6 +1387,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_info,
+            cancel_task,
             get_settings,
             save_settings,
             list_versions,
@@ -1396,6 +1421,7 @@ pub fn run() {
             scan_mods,
             toggle_mod,
             java_list,
+            java_cancel,
             java_install,
             open_instance_dir,
             open_path,

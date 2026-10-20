@@ -45,6 +45,9 @@ pub async fn download_many(
     if specs.is_empty() {
         return Ok((0, 0));
     }
+    if crate::http::is_cancelled() {
+        return Err(crate::error::MicaError::Msg("安装已取消".into()));
+    }
     let total: u64 = specs.iter().filter_map(|s| s.size).sum();
     progress.add_total(total);
 

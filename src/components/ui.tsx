@@ -1,4 +1,4 @@
-﻿import { clsx } from "clsx";
+import { clsx } from "clsx";
 import { CheckCircle2, Info, Loader2, X, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -80,7 +80,7 @@ export function TaskPanel() {
   if (active.length === 0) return null;
 
   return (
-    <div className="fixed bottom-5 right-5 z-40 w-[340px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-pop animate-fade-in">
+    <div className="fixed bottom-5 right-5 z-[60] w-[340px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-pop animate-fade-in">
       <div
         className="flex cursor-pointer items-center justify-between border-b border-[var(--border)] px-3 py-2"
         onClick={() => setCollapsed((c) => !c)}
@@ -103,7 +103,18 @@ export function TaskPanel() {
                   {t.finishedAt ? (
                     <span className="text-[11px] text-brand-400">完成</span>
                   ) : (
-                    <Spinner className="text-brand-400" />
+                    <span className="flex items-center gap-2">
+                      <Spinner className="text-brand-400" />
+                      <button
+                        className="text-[11px] text-red-300 hover:underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void import("@/lib/api").then(({ api }) => api.cancelTask());
+                        }}
+                      >
+                        取消
+                      </button>
+                    </span>
                   )}
                   <button
                     onClick={() => dismiss(t.key)}
