@@ -204,3 +204,47 @@ MICA is a Windows desktop application; there is no server-side redistribution of
 2. **可访问的网站（Website 必填）**：没有独立官网时，仓库地址通常可接受。
 3. 个人信息：真实姓名、邮箱、完整 Discord 用户名（含 #1234）。
 4. 不要提交 API Key 明文；如被要求，说明"可应要求单独提供"。
+---
+
+# 提交记录与跟进（2026-10-20）
+
+## 已提交
+
+- 入口：CurseForge API 应用表单（Overwolf 表单系统）
+- 结果：提交完成页「谢谢你！是时候创建你自己的了」→ 申请已送达
+- 表单中填写的联系方式：**邮箱**（Discord 填 `N/A`，并在补充说明里留了邮箱）
+- 页面未显示工单号
+
+## 回执渠道
+
+- **邮箱**：回执发到表单填写的邮箱；发件人可能是 `support@curseforge.com`、
+  `no-reply@overwolf.com` 或 Zendesk 系统邮件。
+- 检查 **垃圾邮件 / 推广** 标签。
+- 一般 1–2 个工作日内有自动回执（含工单号），人工审核可能更久。
+
+## 48 小时没有回执怎么办
+
+1. 到 [support.curseforge.com](https://support.curseforge.com/) 提工单：
+   "已通过 API application 表单提交，项目 MICA，请确认是否收到"；
+2. 或发邮件到 `support@curseforge.com`，附：项目名、Git 仓库地址
+   （`https://github.com/Amourdoux-OFFI/MICA`）、提交日期。
+
+## 审核通过后要做的事
+
+1. 新 Key 覆盖 `D:\Desktop\DSH\MICA\.data\cf-key.txt`（不要提交、不要外传）；
+2. 先验证 `GET /v1/mods/search?gameId=432&classId=6&pageSize=1` 返回 200；
+3. 再启用启动器内的 CurseForge 搜索；
+4. 旧 Key 在控制台 `Regenerate` 作废（它曾出现在聊天记录里）。
+
+## 审核期间可并行开发
+
+- 设置页 CurseForge API Key（掩码、仅存本机、支持 `CURSEFORGE_API_KEY` 环境变量）
+- CF 整合包拖入安装（manifest → 批量文件 → 下载 + overrides）
+- 按项目 ID / CurseForge 链接安装
+- 搜索接口先接好，权限到位即通；无权限时返回明确错误
+
+## 相关地址
+
+- 公开仓库：https://github.com/Amourdoux-OFFI/MICA
+- Git URL：https://github.com/Amourdoux-OFFI/MICA.git
+- 调研记录：[CurseForge接入调研.md](CurseForge接入调研.md)
