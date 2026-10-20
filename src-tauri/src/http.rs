@@ -66,6 +66,19 @@ impl HttpClient {
         &self.client
     }
 
+    /// 无条件映射到 BMCLAPI（用于官方源失败后的回退）。
+    pub fn force_mirror(&self, url: &str) -> Option<String> {
+        const MAP: &[(&str, &str)] = &[
+            ("https://resources.download.minecraft.net", "https://bmclapi2.bangbang93.com/assets"),
+            ("https://libraries.minecraft.net", "https://bmclapi2.bangbang93.com/maven"),
+            ("https://maven.minecraftforge.net", "https://bmclapi2.bangbang93.com/maven"),
+            ("https://maven.fabricmc.net", "https://bmclapi2.bangbang93.com/maven"),
+            ("https://meta.fabricmc.net", "https://bmclapi2.bangbang93.com/fabric-meta"),
+        ];
+        MAP.iter()
+            .find_map(|(from, to)| url.strip_prefix(from).map(|rest| format!("{to}{rest}")))
+    }
+
     pub fn apply_mirror(&self, url: &str) -> String {
         if self.mirror != "bmclapi" {
             return url.to_string();
@@ -200,6 +213,26 @@ impl HttpClient {
                 Err(e) => {
                     last_err = Some(e);
                     tokio::time::sleep(Duration::from_millis(400 * (attempt as u64 + 1))).await;
+                }
+            }
+        }
+        // 官方源失败/超时：自动回退镜像再试一次（不改用户设置）
+        if let Some(mirror) = self.force_mirror(url) {
+            if mirror != target {
+                let _ = tokio::fs::remove_file(&part).await;
+                if self.download_once(&mirror, &part, prog).await.is_ok() {
+                    let actual = hash::sha1_file(&part)?;
+                    let ok = expected_sha1
+                        .map(|e| actual.eq_ignore_ascii_case(e))
+                        .unwrap_or(true);
+                    if ok {
+                        tokio::fs::rename(&part, dest).await?;
+                        if let Some(expect) = expected_sha1 {
+                            hash::remember(dest, expect);
+                        }
+                        return Ok(std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0));
+                    }
+                    let _ = tokio::fs::remove_file(&part).await;
                 }
             }
         }
