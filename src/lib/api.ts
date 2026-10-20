@@ -1,4 +1,4 @@
-﻿import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 
 // ---------------------------------------------------------------------------
 // 类型（与 Rust serde 输出保持一致）
@@ -180,8 +180,51 @@ export interface Settings {
   showSnapshots: boolean;
   lastGameVersion: string;
   closeToTray: boolean;
+  curseforgeApiKey: string;
 }
 
+export interface CfProject {
+  id: number;
+  name: string;
+  slug: string;
+  summary: string;
+  downloadCount: number;
+  classId: number;
+  logo?: { url?: string | null; thumbnail_url?: string | null } | null;
+  links?: { websiteUrl?: string | null } | null;
+  dateModified?: string;
+  authors?: { name: string }[];
+  categories?: { name: string }[];
+}
+
+export interface CfFile {
+  id: number;
+  modId: number;
+  displayName: string;
+  fileName: string;
+  releaseType: number;
+  fileDate: string;
+  fileLength: number;
+  downloadUrl?: string | null;
+  hashes?: { value: string; algo: number }[];
+  gameVersions?: string[];
+}
+
+export interface CfSearchResponse {
+  data: CfProject[];
+  pagination: { index: number; pageSize: number; resultCount: number; totalCount: number };
+}
+
+export interface CfSearchQuery {
+  query: string;
+  projectType: string;
+  gameVersion?: string | null;
+  modLoaderType?: number | null;
+  categoryId?: number | null;
+  sortField?: number | null;
+  index?: number;
+  pageSize?: number;
+}
 export interface ModEntry {
   fileName: string;
   path: string;
@@ -311,6 +354,16 @@ export const api = {
     call<Instance>("install_loader", { mc, kind, version, instanceName }),
   importInstaller: (path: string) => call<string>("import_installer", { path }),
 
+  cfKeyStatus: () => call<boolean>("cf_key_status"),
+  cfSearch: (query: CfSearchQuery) => call<CfSearchResponse>("cf_search", { query }),
+  cfProject: (id: number) => call<CfProject>("cf_project", { id }),
+  cfFiles: (modId: number, gameVersion?: string, loaderType?: number, pageSize = 30) =>
+    call<CfFile[]>("cf_files", { modId, gameVersion, loaderType, pageSize }),
+  cfInstallMod: (instanceId: string, modId: number, fileId: number) =>
+    call<{ ok: boolean; manual?: boolean; fileName: string; size?: number; sha1?: string }>(
+      "cf_install_mod",
+      { instanceId, modId, fileId }
+    ),
   search: (query: SearchQuery) => call<SearchResponse>("modrinth_search", { query }),
   project: (slug: string) => call<Project>("modrinth_project", { slug }),
   projectVersions: (slug: string, gameVersion?: string, loader?: string) =>

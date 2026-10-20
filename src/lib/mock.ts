@@ -217,6 +217,60 @@ export function installMock() {
     ],
     install_loader: () => instances[0],
     import_installer: () => "1.20.1-forge-47.2.0",
+    cf_key_status: () => true,
+    cf_search: (a: Record<string, unknown>) => {
+      const q = a.query as { query?: string } | undefined;
+      const text = (q?.query ?? "").toLowerCase().trim();
+      if (text.includes("zzz")) {
+        return { data: [], pagination: { index: 0, pageSize: 20, resultCount: 0, totalCount: 0 } };
+      }
+      const mk = (id: number, name: string, slug: string) => ({
+        id,
+        name,
+        slug,
+        summary: `${name} — CurseForge 模拟项目（浏览器预览）`,
+        downloadCount: 100000 + (id % 900000),
+        classId: 4471,
+        logo: null,
+        links: { websiteUrl: `https://www.curseforge.com/minecraft/modpacks/${slug}` },
+        authors: [{ name: "MockAuthor" }],
+        categories: [{ name: "Tech" }, { name: "Quests" }],
+      });
+      return {
+        data: [
+          mk(1266680, "Project Infinity 0.1", "project-infinity-0-1"),
+          mk(925200, "All the Mods 10", "all-the-mods-10"),
+        ],
+        pagination: { index: 0, pageSize: 20, resultCount: 2, totalCount: 2 },
+      };
+    },
+    cf_project: (a: Record<string, unknown>) => ({
+      id: Number(a.id),
+      name: "Project Infinity 0.1",
+      slug: "project-infinity-0-1",
+      summary: "CurseForge 模拟项目",
+      downloadCount: 409227,
+      classId: 4471,
+      logo: null,
+      links: { websiteUrl: "https://www.curseforge.com/minecraft/modpacks/project-infinity-0-1" },
+      authors: [{ name: "MockAuthor" }],
+      categories: [{ name: "Tech" }],
+    }),
+    cf_files: (a: Record<string, unknown>) => [
+      {
+        id: 9255357,
+        modId: Number(a.modId),
+        displayName: "1.20.1 / Fabric",
+        fileName: "cf-mock-1.0.jar",
+        releaseType: 1,
+        fileDate: "2026-01-01T00:00:00Z",
+        fileLength: 1234,
+        downloadUrl: "https://example.invalid/cf-mock.jar",
+        hashes: [{ value: "deadbeef", algo: 1 }],
+        gameVersions: ["1.20.1", "Fabric"],
+      },
+    ],
+    cf_install_mod: () => ({ ok: true, fileName: "cf-mock-1.0.jar", size: 1234 }),
     modrinth_search: (a: Record<string, unknown>) => {
       const q = a.query as { query?: string } | undefined;
       const text = (q?.query ?? "").toLowerCase().trim();

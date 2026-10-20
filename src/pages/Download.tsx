@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Boxes,
   Download,
@@ -8,14 +8,13 @@ import {
   Lock,
   Package,
   Search,
-  Sparkles,
   Sun,
   Database,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { isTauri } from "@/lib/mock";
 import { useApp } from "@/stores/app";
-import { api, type ModVersion, type Project, type SearchHit, type Tags, type VersionSummary } from "@/lib/api";
+import { api, type CfFile, type CfProject, type ModVersion, type Project, type SearchHit, type Tags, type VersionSummary } from "@/lib/api";
 import { Badge, Empty, Modal, Spinner } from "@/components/ui";
 import { formatCount, formatDate, loaderLabel, majorOf, projectTypeLabel } from "@/lib/format";
 
@@ -73,7 +72,7 @@ export default function DownloadPage() {
       {tab === "versions" ? (
         <VersionsTab />
       ) : tab === "curseforge" ? (
-        <CurseForgeShell />
+        <CurseForgeTab />
       ) : (
         <ContentBrowser key={tab} type={tab} />
       )}
@@ -833,46 +832,236 @@ function InstallVersionModal({
 }
 
 // ---------------------------------------------------------------------------
-// CurseForge 空壳
+// ---------------------------------------------------------------------------
+// CurseForge（真实 API：搜索 / 详情 / 文件 / 安装）
 // ---------------------------------------------------------------------------
 
-function CurseForgeShell() {
-  return (
-    <div className="card relative overflow-hidden">
-      <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full bg-orange-500/10 blur-3xl" />
-      <div className="relative flex flex-col items-center px-8 py-14 text-center">
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-500/10">
-          <Lock size={24} className="text-orange-300/80" />
-        </div>
-        <h2 className="text-[16px] font-semibold">CurseForge 支持暂缓</h2>
-        <p className="mt-2 max-w-[560px] text-[12.5px] leading-6 muted">
-          按你的要求，CurseForge 相关能力（搜索、整合包解析、文件直链）本次以
-          <strong className="text-[var(--text)]">空壳</strong>
-          交付：界面与路由已预留，但不包含任何网络请求。
-          该能力需要 CurseForge for Studios 的 API Key，且文件直链存在作者关闭第三方分发的限制。
-        </p>
+const CF_TYPES: { key: string; label: string }[] = [
+  { key: "modpack", label: "整合包" },
+  { key: "mod", label: "Mod" },
+  { key: "resourcepack", label: "资源包" },
+  { key: "shader", label: "光影" },
+  { key: "datapack", label: "数据包" },
+];
 
-        <div className="mt-6 grid w-full max-w-[720px] grid-cols-1 gap-3 text-left md:grid-cols-3">
-          {[
-            ["搜索与分类", "按游戏版本 / 加载器 / 分类检索 CurseForge 项目"],
-            ["整合包安装", "解析 manifest.json 并逐个下载 projectID / fileID"],
-            ["文件直链", "downloadUrl 为空时回退到「手动下载 + SHA1 校验」"],
-          ].map(([t, d]) => (
-            <div
-              key={t}
-              className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface-2)] p-3.5 opacity-70"
-            >
-              <div className="text-[12.5px] font-medium">{t}</div>
-              <div className="mt-1 text-[11.5px] leading-5 muted">{d}</div>
+function CurseForgeTab() {
+  const toast = useApp((s) => s.toast);
+  const [keyOk, setKeyOk] = useState<boolean | null>(null);
+  const [type, setType] = useState("modpack");
+  const [query, setQuery] = useState("project infinity");
+  const [hits, setHits] = useState<CfProject[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [detail, setDetail] = useState<CfProject | null>(null);
+
+  const run = useCallback(
+    async (keyword = query, kind = type) => {
+      setLoading(true);
+      try {
+        const r = await api.cfSearch({ query: keyword, projectType: kind, index: 0, pageSize: 20 });
+        setHits(r.data);
+        setTotal(r.pagination.totalCount);
+      } catch (e) {
+        toast(String(e), "error");
+        setHits([]);
+        setTotal(0);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [query, type, toast]
+  );
+
+  useEffect(() => {
+    api
+      .cfKeyStatus()
+      .then((ok) => {
+        setKeyOk(ok);
+        if (ok) void run();
+      })
+      .catch(() => setKeyOk(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      {keyOk === false && (
+        <div className="card flex items-start gap-3 p-4">
+          <Lock size={18} className="mt-0.5 text-orange-300" />
+          <div className="text-[12.5px] leading-6">
+            <div className="font-medium">未配置 CurseForge API Key</div>
+            <div className="muted">
+              到「设置 → 下载」填入 Key（仅存本机），或设置环境变量 <code>CURSEFORGE_API_KEY</code> 后重启。
+              申请方式见 docs/CurseForge-API申请.md。
             </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 muted" />
+          <input
+            className="input w-full pl-9"
+            placeholder="搜索 CurseForge 项目，如 project infinity…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void run();
+            }}
+          />
+        </div>
+        <select className="input w-[132px]" value={type} onChange={(e) => { setType(e.target.value); void run(query, e.target.value); }}>
+          {CF_TYPES.map((x) => (
+            <option key={x.key} value={x.key}>{x.label}</option>
+          ))}
+        </select>
+        <button className="btn btn-primary" onClick={() => void run()} disabled={loading}>
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+          搜索
+        </button>
+      </div>
+
+      <div className="text-[11.5px] muted">
+        来源 CurseForge · {total} 个结果 · 按下载量排序
+        {keyOk === null ? " · 正在检查 Key…" : ""}
+      </div>
+
+      {loading ? (
+        <div className="card flex items-center justify-center py-16">
+          <Spinner />
+        </div>
+      ) : hits.length === 0 ? (
+        <div className="card">
+          <Empty icon={<Search size={22} />} title="没有找到结果" desc="换个关键词，或切换内容类型；仅展示 CurseForge 上可检索的项目。" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {hits.map((p) => (
+            <button
+              key={p.id}
+              className="card flex items-start gap-3 p-3.5 text-left transition hover:border-brand-500/50"
+              onClick={() => setDetail(p)}
+            >
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[var(--surface-2)]">
+                {p.logo?.url ? (
+                  <img src={p.logo.url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                ) : (
+                  <Package size={20} className="muted" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-[13.5px] font-medium">{p.name}</span>
+                  <Badge tone="brand">CF</Badge>
+                </div>
+                <div className="mt-1 line-clamp-2 text-[11.5px] leading-5 muted">{p.summary}</div>
+                <div className="mt-1.5 flex items-center gap-3 text-[11px] muted">
+                  <span>{formatCount(p.downloadCount)} 下载</span>
+                  {(p.categories ?? []).slice(0, 2).map((c) => (
+                    <span key={c.name}>{c.name}</span>
+                  ))}
+                </div>
+              </div>
+            </button>
           ))}
         </div>
+      )}
 
-        <div className="mt-6 flex items-center gap-2 text-[11.5px] muted">
-          <Sparkles size={13} className="text-brand-400" />
-          当前可用替代：Modrinth 已覆盖整合包 / Mod / 资源包 / 光影 / 数据包全品类。
+      {detail && <CfDetail project={detail} onClose={() => setDetail(null)} />}
+    </div>
+  );
+}
+
+function CfDetail({ project, onClose }: { project: CfProject; onClose: () => void }) {
+  const toast = useApp((s) => s.toast);
+  const instances = useApp((s) => s.instances);
+  const [files, setFiles] = useState<CfFile[]>([]);
+  const [target, setTarget] = useState(instances[0]?.id ?? "");
+  const [busy, setBusy] = useState<number | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .cfFiles(project.id)
+      .then((list) => {
+        if (alive) setFiles(list.slice(0, 8));
+      })
+      .catch((e) => toast(String(e), "error"));
+    return () => {
+      alive = false;
+    };
+  }, [project.id, toast]);
+
+  async function install(f: CfFile) {
+    if (!target) {
+      toast("请先在「实例」页创建一个实例", "error");
+      return;
+    }
+    setBusy(f.id);
+    try {
+      const r = await api.cfInstallMod(target, project.id, f.id);
+      if (r.manual) toast("作者关闭了第三方分发，请到 CurseForge 页面手动下载", "info");
+      else toast(`已安装 ${r.fileName}`, "success");
+    } catch (e) {
+      toast(String(e), "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Modal open title={project.name} onClose={onClose} width={720}>
+      <div className="space-y-3">
+        <div className="text-[12px] leading-6 muted">{project.summary}</div>
+        <div className="flex flex-wrap items-center gap-3 text-[11.5px] muted">
+          <span>{formatCount(project.downloadCount)} 下载</span>
+          <span>{(project.categories ?? []).map((c) => c.name).join(" / ")}</span>
+          {project.links?.websiteUrl && (
+            <button
+              className="inline-flex items-center gap-1 text-brand-300 hover:underline"
+              onClick={() => void import("@tauri-apps/plugin-opener").then((m) => m.openUrl(project.links!.websiteUrl!)).catch(() => toast("仅桌面端可打开", "info"))}
+            >
+              <ExternalLink size={12} /> 项目页
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] muted">安装到</span>
+          <select className="input w-[240px]" value={target} onChange={(e) => setTarget(e.target.value)}>
+            <option value="">选择实例…</option>
+            {instances.map((i) => (
+              <option key={i.id} value={i.id}>{i.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-2">
+          {files.length === 0 ? (
+            <div className="text-[12px] muted">正在读取文件列表…（若一直为空，可能该 Key 无文件权限）</div>
+          ) : (
+            files.map((f) => (
+              <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[12.5px]">{f.displayName || f.fileName}</div>
+                  <div className="truncate text-[11px] muted">
+                    {f.fileName} · {(f.fileLength / 1048576).toFixed(1)} MB · {(f.gameVersions ?? []).slice(0, 3).join(" / ")}
+                  </div>
+                </div>
+                <button className="btn btn-sm" disabled={busy === f.id} onClick={() => void install(f)}>
+                  {busy === f.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                  安装
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="text-[11px] muted">
+          提示：文件直链由 CurseForge 提供；作者关闭第三方分发时会转为手动下载。
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -1,4 +1,4 @@
-﻿// UI 级功能检查：无头 Chromium 渲染真实前端产物 + 模拟 IPC，断言 + 截图。
+// UI 级功能检查：无头 Chromium 渲染真实前端产物 + 模拟 IPC，断言 + 截图。
 import { chromium } from "playwright-core";
 import fs from "node:fs";
 
@@ -82,10 +82,10 @@ await shot("u06-install-wizard");
 await page.keyboard.press("Escape");
 await page.waitForTimeout(300);
 
-// ---------- CurseForge 空壳 ----------
+// ---------- CurseForge（真实 Tab） ----------
 await page.locator("button.tab", { hasText: "CurseForge" }).click();
 await page.waitForTimeout(600);
-check("CF 空壳文案", (await page.getByText("CurseForge 支持暂缓").count()) >= 1);
+check("CF 搜索框与来源", (await page.getByPlaceholder(/project infinity/).count()) >= 1 && (await page.getByText(/来源 CurseForge/).count()) >= 1);
 await shot("u07-curseforge");
 
 // ---------- 服务端 ----------
@@ -207,6 +207,21 @@ const dur = await page.evaluate(() => {
 });
 check("遵循减少动态效果", dur === "0.00001s" || dur === "0s" || parseFloat(dur) < 0.01, `transition=${dur}`);
 await page.emulateMedia({ reducedMotion: "no-preference" });
+// CurseForge Tab（mock IPC）
+await page.setViewportSize({ width: 1280, height: 800 });
+await page.locator("aside button", { hasText: "下载" }).first().click();
+await page.waitForTimeout(500);
+await page.locator("button.tab", { hasText: "CurseForge" }).first().click();
+await page.waitForTimeout(1500);
+const cfCards = await page.locator("button.card").count();
+check("CF 搜索结果渲染", cfCards >= 1, `cards=${cfCards}`);
+if (cfCards > 0) {
+  await page.locator("button.card").first().click();
+  await page.waitForTimeout(900);
+  check("CF 详情含安装按钮", (await page.getByText("安装", { exact: true }).count()) >= 1);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+}
 check("无前端报错", errors.length === 0, errors.slice(0, 2).join(" | "));
 
 await browser.close();

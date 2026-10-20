@@ -26,7 +26,7 @@ server packs and one-click localization.
 | Modrinth 内容中心 | ✅ | Mod / 整合包 / 资源包 / 光影 / 数据包；搜索、分类、加载器、游戏版本筛选、排序、分页 |
 | 整合包安装 | ✅ | `.mrpack` 远程/拖入、MultiMC/Prism 实例包、通用 zip（覆盖策略）；CurseForge 包**识别但暂缓安装** |
 | Java 管理 | ✅ | 自动探测（PATH/注册表/常见目录/托管目录）+ 按 `javaVersion` 匹配 + Mojang 运行时（快）+ Adoptium JDK 兜底 |
-| CurseForge | 🚧 后端已通 | 搜索/详情/文件/批量/直链（C29–C32）+ 单 mod 安装 + 整合包 manifest 安装，均已实测；前端 Tab 接入中 |
+| CurseForge | ✅ | API Key 接入；搜索、详情、文件列表、单 mod 安装、整合包 manifest 安装；`downloadUrl` 为空转手动下载 |
 | 联机 | 🧩 空壳 | 路由与能力位预留（`MultiplayerService`），无死按钮 |
 
 ---
@@ -50,7 +50,7 @@ server packs and one-click localization.
 | 前端 | 328 KB JS（gzip 100 KB），无重型 UI 库 |
 | Rust 依赖 | 已裁掉 anyhow / tempfile / tracing / tracing-subscriber / quick-xml / dirs |
 
-源码构建见下文；验收结果见 [docs/验收报告.md](docs/验收报告.md)（28 条全通过）。手工验收见 [docs/验收指南.md](docs/验收指南.md)。
+源码构建见下文；验收结果见 [docs/验收报告.md](docs/验收报告.md)（33 条全通过）。手工验收见 [docs/验收指南.md](docs/验收指南.md)。
 
 ## 界面
 

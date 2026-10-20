@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Coffee,
   DownloadCloud,
@@ -172,6 +172,20 @@ export default function SettingsPage() {
             value={draft.proxy}
             onChange={(e) => patch({ proxy: e.target.value })}
           />
+        </Field>
+        <Field label="CurseForge API Key">
+          <div className="flex flex-col gap-1">
+            <input
+              className="input w-[360px] font-mono"
+              type="password"
+              placeholder="$2a$10$…（仅存本机，不写入日志）"
+              value={draft.curseforgeApiKey ?? ""}
+              onChange={(e) => patch({ curseforgeApiKey: e.target.value })}
+            />
+            <span className="text-[11px] muted">
+              用于 CurseForge 搜索/下载；也可用环境变量 CURSEFORGE_API_KEY。申请见 docs/CurseForge-API申请.md。
+            </span>
+          </div>
         </Field>
         <Field label="默认内存上限">
           <div className="flex items-center gap-2">
