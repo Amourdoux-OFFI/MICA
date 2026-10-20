@@ -71,9 +71,24 @@ pub fn build_plan(
     let natives_dir = paths.version_dir(&base.id).join("natives");
 
     let mut classpath: Vec<String> = Vec::new();
+    let natives_suffix = match (os.name.as_str(), os.arch.as_str()) {
+        ("windows", "x86_64") => "natives-windows",
+        ("windows", "x86") => "natives-windows-x86",
+        ("windows", "arm64") => "natives-windows-arm64",
+        ("osx", "arm64") => "natives-macos-arm64",
+        ("osx", _) => "natives-macos",
+        (_, "arm64") => "natives-linux-arm64",
+        _ => "natives-linux",
+    };
     for lib in &merged.libraries {
         if !allowed_by_rules(lib.rules.as_ref(), &os, &features) {
             continue;
+        }
+        // 原生库只保留与当前架构匹配的分类器（1.20.1 的 rules 未区分 arch）
+        if let Some(c) = crate::version::MavenCoord::parse(&lib.name).and_then(|m| m.classifier) {
+            if c.starts_with("natives-") && c != natives_suffix {
+                continue;
+            }
         }
         if let Some(rel) = library_path(lib) {
             let p = paths.libraries().join(rel);
@@ -82,7 +97,14 @@ pub fn build_plan(
             }
         }
     }
-    let client_jar = paths.version_jar(&base.id);
+    // Forge 安装会生成 client-extra（去重后的客户端 jar），必须用它替代原版 jar，
+    // 否则与原版 jar 的自动模块名冲突（_1._20._1 vs minecraft）。
+    let mut client_jar = paths.version_jar(&base.id);
+    if merged.id.to_lowercase().contains("forge") {
+        if let Some(ce) = find_client_extra(paths) {
+            client_jar = ce;
+        }
+    }
     if client_jar.exists() {
         classpath.push(client_jar.display().to_string());
     }
@@ -397,6 +419,26 @@ fn detect_marker(line: &str) -> Option<String> {
     for (needle, tag) in MARKERS {
         if line.contains(needle) {
             return Some((*tag).to_string());
+        }
+    }
+    None
+}
+
+fn find_client_extra(paths: &Paths) -> Option<std::path::PathBuf> {
+    let root = paths.libraries().join("net").join("minecraft").join("client");
+    let entries = std::fs::read_dir(root).ok()?;
+    for e in entries.flatten() {
+        let p = e.path();
+        if !p.is_dir() {
+            continue;
+        }
+        if let Ok(files) = std::fs::read_dir(&p) {
+            for f in files.flatten() {
+                let name = f.file_name().to_string_lossy().to_string();
+                if name.ends_with("-extra.jar") || name == "client-extra.jar" {
+                    return Some(f.path());
+                }
+            }
         }
     }
     None

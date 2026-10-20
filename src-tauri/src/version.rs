@@ -1,4 +1,4 @@
-﻿//! 版本 JSON 结构、规则求值、Maven 坐标、版本链合并。
+//! 版本 JSON 结构、规则求值、Maven 坐标、版本链合并。
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -407,7 +407,7 @@ pub fn merge_versions(parent: &VersionJson, child: &VersionJson) -> VersionJson 
     let mut index: HashMap<String, usize> = HashMap::new();
     for lib in parent.libraries.iter().chain(child.libraries.iter()) {
         let key = MavenCoord::parse(&lib.name)
-            .map(|c| c.key())
+            .map(|c| format!("{}:{}", c.key(), c.classifier.clone().unwrap_or_default()))
             .unwrap_or_else(|| lib.name.clone());
         if let Some(&i) = index.get(&key) {
             merged[i] = lib.clone();
