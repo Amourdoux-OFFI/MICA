@@ -1,4 +1,4 @@
-﻿//! Java 运行时：检测、探测、下载（Adoptium）、管理。
+//! Java 运行时：检测、探测、下载（Adoptium）、管理。
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -34,10 +34,19 @@ pub struct JavaRuntime {
 pub async fn probe(java: &Path) -> Option<JavaRuntime> {
     let out = tokio::time::timeout(
         Duration::from_secs(8),
-        Command::new(java)
-            .arg("-XshowSettings:properties")
-            .arg("-version")
-            .output(),
+        {
+            #[cfg(windows)]
+            let mut cmd = {
+                use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+                let mut c = Command::new(java);
+                c.creation_flags(CREATE_NO_WINDOW);
+                c
+            };
+            #[cfg(not(windows))]
+            let mut cmd = Command::new(java);
+            cmd.arg("-XshowSettings:properties").arg("-version").output()
+        },
     )
     .await
     .ok()?
