@@ -121,7 +121,9 @@ async fn ms_login_window(
     if let Some(w) = app.get_webview_window("ms-login") {
         let _ = w.close();
     }
+    let data_dir = state.paths.cache().join("webview");
     tauri::WebviewWindowBuilder::new(&app, "ms-login", tauri::WebviewUrl::External(parsed))
+        .data_directory(data_dir)
         .title("Microsoft 登录")
         .inner_size(560.0, 760.0)
         .center()
