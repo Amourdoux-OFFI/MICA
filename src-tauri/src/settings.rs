@@ -37,6 +37,8 @@ pub struct Settings {
     pub curseforge_api_key: String,
     /// 启动窗口：small | windowed | fullscreen
     pub game_window: String,
+    /// 强制 Unicode 字体（中文不显示方块）
+    pub force_unicode_font: bool,
 }
 
 impl Default for Settings {
@@ -56,6 +58,7 @@ impl Default for Settings {
             close_to_tray: false,
             curseforge_api_key: String::new(),
             game_window: "windowed".into(),
+            force_unicode_font: true,
         }
     }
 }

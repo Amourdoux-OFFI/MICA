@@ -697,6 +697,30 @@ fn window_mode(paths: &crate::paths::Paths, inst: &Instance, settings: &crate::s
     (w, h)
 }
 
+fn set_bool_option(path: &std::path::Path, key: &str, value: bool) -> std::io::Result<()> {
+    let mut lines: Vec<String> = std::fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .map(|s| s.to_string())
+        .collect();
+    let want = format!("{key}:{}", if value { "true" } else { "false" });
+    let mut found = false;
+    for l in lines.iter_mut() {
+        if l.starts_with(&format!("{key}:")) {
+            *l = want.clone();
+            found = true;
+        }
+    }
+    if !found {
+        lines.push(want);
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(path, lines.join("\n"))?;
+    Ok(())
+}
+
 fn set_fullscreen_option(path: &std::path::Path, full: bool) -> std::io::Result<()> {
     let mut lines: Vec<String> = std::fs::read_to_string(path)
         .unwrap_or_default()
