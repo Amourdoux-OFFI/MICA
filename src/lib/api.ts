@@ -404,6 +404,7 @@ export const api = {
   javaInstall: (major: number) => call<JavaRuntime>("java_install", { major }),
   javaCancel: () => call<boolean>("java_cancel"),
   cancelTask: () => call<boolean>("cancel_task"),
+  copyText: (text: string) => call<void>("copy_text", { text }),
   msLogin: () => call<MsProfile>("ms_login"),
   msLoginStart: () => call<string>("ms_login_start"),
   msAccount: () => call<MsProfile | null>("ms_account"),

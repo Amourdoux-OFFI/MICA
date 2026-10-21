@@ -180,10 +180,10 @@ export default function SettingsPage() {
                 <button
                   className="btn btn-sm"
                   onClick={() =>
-                    void navigator.clipboard
-                      .writeText(msUrl)
+                    void api
+                      .copyText(msUrl)
                       .then(() => toast("登录链接已复制", "success"))
-                      .catch(() => toast("复制失败，请手动选择文本", "error"))
+                      .catch((e) => toast(String(e), "error"))
                   }
                 >
                   复制

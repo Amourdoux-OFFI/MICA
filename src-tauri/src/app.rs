@@ -144,6 +144,45 @@ fn play_stats(state: State<'_, Arc<AppState>>) -> crate::instances::PlayStats {
 }
 
 #[tauri::command]
+fn copy_text(text: String) -> CmdResult<()> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::DataExchange::{
+            CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+        };
+        use windows_sys::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+        const CF_UNICODETEXT: u32 = 13;
+        let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        let bytes = wide.len() * 2;
+        unsafe {
+            if OpenClipboard(std::ptr::null_mut()) == 0 {
+                return Err("打开剪贴板失败".into());
+            }
+            let _ = EmptyClipboard();
+            let h = GlobalAlloc(GMEM_MOVEABLE, bytes);
+            if h.is_null() {
+                let _ = CloseClipboard();
+                return Err("分配剪贴板内存失败".into());
+            }
+            let p = GlobalLock(h) as *mut u16;
+            if p.is_null() {
+                let _ = CloseClipboard();
+                return Err("锁定剪贴板内存失败".into());
+            }
+            std::ptr::copy_nonoverlapping(wide.as_ptr(), p, wide.len());
+            let _ = GlobalUnlock(h);
+            let _ = SetClipboardData(CF_UNICODETEXT, h as *mut _);
+            let _ = CloseClipboard();
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = text;
+        return Err("仅 Windows 支持".into());
+    }
+    Ok(())
+}
+#[tauri::command]
 fn open_url(url: String) -> CmdResult<()> {
     let u = url.trim();
     if !(u.starts_with("https://") || u.starts_with("http://")) {
@@ -151,10 +190,7 @@ fn open_url(url: String) -> CmdResult<()> {
     }
     #[cfg(windows)]
     {
-        std::process::Command::new("rundll32")
-            .args(["url.dll,FileProtocolHandler", u])
-            .spawn()
-            .map_err(|e| e.to_string())?;
+        crate::msauth::open_browser(u);
     }
     #[cfg(not(windows))]
     {
@@ -1525,6 +1561,7 @@ pub fn run() {
             app_info,
             cancel_task,
             open_url,
+            copy_text,
             play_stats,
             ms_login,
             ms_login_start,
