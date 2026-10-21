@@ -105,6 +105,39 @@ async fn app_info(state: State<'_, Arc<AppState>>) -> CmdResult<AppInfo> {
 }
 
 #[tauri::command]
+async fn ms_login_window(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> CmdResult<String> {
+    let settings = state.settings();
+    let mut client_id = settings.ms_client_id.trim().to_string();
+    if client_id.is_empty() {
+        client_id = "74cf63f2-0721-4961-b1b4-7515de2f523f".to_string();
+    }
+    let url = crate::msauth::start(state.http(), state.paths.clone(), client_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let parsed: tauri::Url = url.parse().map_err(|e| format!("登录地址无效：{e}"))?;
+    if let Some(w) = app.get_webview_window("ms-login") {
+        let _ = w.close();
+    }
+    tauri::WebviewWindowBuilder::new(&app, "ms-login", tauri::WebviewUrl::External(parsed))
+        .title("Microsoft 登录")
+        .inner_size(560.0, 760.0)
+        .center()
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(url)
+}
+
+#[tauri::command]
+fn ms_login_close(app: tauri::AppHandle) -> CmdResult<()> {
+    if let Some(w) = app.get_webview_window("ms-login") {
+        let _ = w.close();
+    }
+    Ok(())
+}
+#[tauri::command]
 async fn ms_login_start(state: State<'_, Arc<AppState>>) -> CmdResult<String> {
     let settings = state.settings();
     let mut client_id = settings.ms_client_id.trim().to_string();
@@ -1576,6 +1609,8 @@ pub fn run() {
             play_stats,
             ms_login,
             ms_login_start,
+            ms_login_window,
+            ms_login_close,
             ms_account,
             get_settings,
             save_settings,

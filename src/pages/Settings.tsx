@@ -76,7 +76,7 @@ export default function SettingsPage() {
   const doMsLogin = async () => {
     setMsBusy(true);
     try {
-      const url = await api.msLoginStart();
+      const url = await api.msLoginWindow();
       setMsUrl(url);
       toast("已生成登录链接：点「打开」或复制到浏览器完成授权", "info");
       let tries = 0;
@@ -87,6 +87,7 @@ export default function SettingsPage() {
           if (p) {
             setMs(p);
             setMsUrl("");
+            void api.msLoginClose();
             toast(`已登录：${p.name}`, "success");
             window.clearInterval(timer);
           }

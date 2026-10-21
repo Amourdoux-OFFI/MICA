@@ -407,6 +407,8 @@ export const api = {
   copyText: (text: string) => call<void>("copy_text", { text }),
   msLogin: () => call<MsProfile>("ms_login"),
   msLoginStart: () => call<string>("ms_login_start"),
+  msLoginWindow: () => call<string>("ms_login_window"),
+  msLoginClose: () => call<void>("ms_login_close"),
   msAccount: () => call<MsProfile | null>("ms_account"),
   openUrl: (url: string) => call<void>("open_url", { url }),
 
