@@ -405,6 +405,7 @@ export const api = {
   javaCancel: () => call<boolean>("java_cancel"),
   cancelTask: () => call<boolean>("cancel_task"),
   msLogin: () => call<MsProfile>("ms_login"),
+  msLoginStart: () => call<string>("ms_login_start"),
   msAccount: () => call<MsProfile | null>("ms_account"),
   openUrl: (url: string) => call<void>("open_url", { url }),
 

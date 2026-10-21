@@ -1,10 +1,7 @@
 //! Microsoft 正版登录：授权码 + PKCE + 本地回环 → Xbox Live → XSTS → Minecraft 档案。
-//!
-//! 不依赖额外 crate：base64url 与 PKCE 都手写。
 
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
-use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -14,6 +11,7 @@ use tokio::net::TcpListener;
 
 use crate::error::{MicaError, Result};
 use crate::http::HttpClient;
+use crate::paths::Paths;
 
 const AUTH: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
 const TOKEN: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
@@ -42,10 +40,10 @@ struct TokenResponse {
 
 #[derive(Deserialize)]
 struct XblResponse {
-    #[serde(default)]
-    Token: String,
-    #[serde(default)]
-    DisplayClaims: Option<XblClaims>,
+    #[serde(default, rename = "Token")]
+    token: String,
+    #[serde(default, rename = "DisplayClaims")]
+    claims: Option<XblClaims>,
 }
 
 #[derive(Deserialize)]
@@ -134,7 +132,7 @@ fn auth_url(client_id: &str, challenge: &str, state: &str) -> String {
     )
 }
 
-fn open_browser(url: &str) -> Result<()> {
+pub fn open_browser(url: &str) {
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::Shell::ShellExecuteW;
@@ -151,28 +149,22 @@ fn open_browser(url: &str) -> Result<()> {
             )
         };
         if (r as isize) > 32 {
-            return Ok(());
+            return;
         }
-        crate::logging::log("WARN", &format!("ShellExecuteW 打开浏览器失败（{r:?}），改用 cmd start"));
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let status = std::process::Command::new("cmd")
+        let _ = std::process::Command::new("cmd")
             .args(["/c", "start", "", url])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
-        match status {
-            Ok(s) if s.success() => Ok(()),
-            _ => Err(MicaError::Msg("无法打开浏览器，请手动访问登录地址".into())),
-        }
+            .spawn();
     }
     #[cfg(not(windows))]
     {
-        std::process::Command::new("xdg-open")
-            .arg(url)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| MicaError::Msg(format!("无法打开浏览器：{e}")))
+        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
     }
+}
+
+async fn bind_listener() -> Result<TcpListener> {
+    TcpListener::bind(("127.0.0.1", 52123))
+        .await
+        .map_err(|e| MicaError::Msg(format!("无法监听本地回调端口 52123（可能被占用）：{e}")))
 }
 
 async fn wait_callback(listener: TcpListener, expected_state: &str) -> Result<String> {
@@ -186,7 +178,7 @@ async fn wait_callback(listener: TcpListener, expected_state: &str) -> Result<St
         let n = stream.read(&mut buf).await.unwrap_or(0);
         let req = String::from_utf8_lossy(&buf[..n]).to_string();
         let Some(line) = req.lines().next() else { continue };
-        let path = line.split_whitespace().nth(1).unwrap_or("/");
+        let path = line.split_whitespace().nth(1).unwrap_or("/").to_string();
         if !path.starts_with("/callback") {
             let _ = stream
                 .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
@@ -203,16 +195,15 @@ async fn wait_callback(listener: TcpListener, expected_state: &str) -> Result<St
             match k {
                 "code" => code = v,
                 "state" => state = v,
-                "error_description" => err = v,
-                "error" => err = v,
+                "error_description" | "error" => err = v,
                 _ => {}
             }
         }
         let ok = !code.is_empty() && state == expected_state;
         let body = if ok {
-            "<html><body style='font-family:sans-serif;padding:40px'><h2>MICA 登录成功</h2><p>可以关闭此页面，返回启动器。</p></body></html>"
+            "<html><meta charset='utf-8'><body style='font-family:sans-serif;padding:40px'><h2>MICA 登录成功</h2><p>可以关闭此页面，返回启动器。</p></body></html>"
         } else {
-            "<html><body style='font-family:sans-serif;padding:40px'><h2>MICA 登录失败</h2><p>请返回启动器重试。</p></body></html>"
+            "<html><meta charset='utf-8'><body style='font-family:sans-serif;padding:40px'><h2>MICA 登录失败</h2><p>请返回启动器重试。</p></body></html>"
         };
         let _ = stream
             .write_all(
@@ -250,33 +241,27 @@ async fn post_json<T: for<'de> Deserialize<'de>>(
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
-        return Err(MicaError::Http(format!("{url} → HTTP {status}: {}", text.chars().take(200).collect::<String>())));
+        return Err(MicaError::Msg(format!(
+            "{url} → HTTP {status}: {}",
+            text.chars().take(200).collect::<String>()
+        )));
     }
     serde_json::from_str(&text).map_err(|e| MicaError::Msg(format!("认证响应解析失败：{e}")))
 }
 
-/// 完整登录流程；成功后返回档案与 token。
-pub async fn login(http: &HttpClient, client_id: &str) -> Result<MsProfile> {
-    let client_id = client_id.trim();
-    if client_id.is_empty() {
-        return Err(MicaError::Msg("未配置 Microsoft 应用 Client ID".into()));
-    }
-    let (verifier, challenge) = pkce_pair();
-    let state = b64url(&random_bytes(16));
-    let listener = TcpListener::bind(("127.0.0.1", 52123))
-        .await
-        .map_err(|e| MicaError::Msg(format!("无法监听本地回调端口 52123（可能被其他程序占用）：{e}")))?;
-    let url = auth_url(client_id, &challenge, &state);
-    crate::logging::log("INFO", "Microsoft 登录：打开系统浏览器");
-    open_browser(&url)?;
-    let code = wait_callback(listener, &state).await?;
-
+/// 用授权码完成 token 交换与 Xbox/Minecraft 认证链。
+pub async fn complete(
+    http: &HttpClient,
+    client_id: &str,
+    code: &str,
+    verifier: &str,
+) -> Result<MsProfile> {
     let form = [
         ("client_id", client_id),
         ("grant_type", "authorization_code"),
-        ("code", code.as_str()),
+        ("code", code),
         ("redirect_uri", REDIRECT),
-        ("code_verifier", verifier.as_str()),
+        ("code_verifier", verifier),
         ("scope", SCOPES),
     ];
     let resp = http
@@ -294,7 +279,11 @@ pub async fn login(http: &HttpClient, client_id: &str) -> Result<MsProfile> {
         } else {
             ""
         };
-        return Err(MicaError::Msg(format!("换取 Microsoft token 失败：{} {}", text.chars().take(200).collect::<String>(), hint)));
+        return Err(MicaError::Msg(format!(
+            "换取 Microsoft token 失败：{} {}",
+            text.chars().take(200).collect::<String>(),
+            hint
+        )));
     }
     let token: TokenResponse =
         serde_json::from_str(&text).map_err(|e| MicaError::Msg(format!("token 解析失败：{e}")))?;
@@ -310,28 +299,29 @@ pub async fn login(http: &HttpClient, client_id: &str) -> Result<MsProfile> {
     )
     .await?;
     let uhs = xbl
-        .DisplayClaims
+        .claims
         .as_ref()
         .and_then(|c| c.xui.first())
         .map(|x| x.uhs.clone())
         .unwrap_or_default();
-    if xbl.Token.is_empty() || uhs.is_empty() {
-        return Err(MicaError::Msg("Xbox Live 认证失败（该账号可能未创建 Xbox 档案）".into()));
+    if xbl.token.is_empty() || uhs.is_empty() {
+        return Err(MicaError::Msg(
+            "Xbox Live 认证失败（该账号可能未创建 Xbox 档案）".into(),
+        ));
     }
 
     let xsts: XblResponse = post_json(
         http,
         "https://xsts.auth.xboxlive.com/xsts/authorize",
         serde_json::json!({
-            "Properties": { "SandboxId": "RETAIL", "UserTokens": [xbl.Token] },
+            "Properties": { "SandboxId": "RETAIL", "UserTokens": [xbl.token] },
             "RelyingParty": "rp://api.minecraftservices.com/",
             "TokenType": "JWT"
         }),
     )
     .await?;
-    let xsts_token = xsts.Token;
     let uhs2 = xsts
-        .DisplayClaims
+        .claims
         .as_ref()
         .and_then(|c| c.xui.first())
         .map(|x| x.uhs.clone())
@@ -340,7 +330,7 @@ pub async fn login(http: &HttpClient, client_id: &str) -> Result<MsProfile> {
     let mc: McLogin = post_json(
         http,
         "https://api.minecraftservices.com/authentication/login_with_xbox",
-        serde_json::json!({ "identityToken": format!("XBL3.0 x={uhs2};{xsts_token}") }),
+        serde_json::json!({ "identityToken": format!("XBL3.0 x={uhs2};{}", xsts.token) }),
     )
     .await?;
     if mc.access_token.is_empty() {
@@ -372,8 +362,46 @@ pub async fn login(http: &HttpClient, client_id: &str) -> Result<MsProfile> {
     })
 }
 
-/// 保存正版档案（accounts.json）。
-pub fn save_profile(paths: &crate::paths::Paths, profile: &MsProfile) -> Result<()> {
+/// 立即返回授权 URL；后台等待回调、完成认证并写入 accounts.json。
+pub async fn start(http: HttpClient, paths: Paths, client_id: String) -> Result<String> {
+    let client_id = client_id.trim().to_string();
+    if client_id.is_empty() {
+        return Err(MicaError::Msg("未配置 Microsoft 应用 Client ID".into()));
+    }
+    let (verifier, challenge) = pkce_pair();
+    let state = b64url(&random_bytes(16));
+    let listener = bind_listener().await?;
+    let url = auth_url(&client_id, &challenge, &state);
+    tokio::spawn(async move {
+        match wait_callback(listener, &state).await {
+            Ok(code) => match complete(&http, &client_id, &code, &verifier).await {
+                Ok(profile) => {
+                    if let Err(e) = save_profile(&paths, &profile) {
+                        crate::logging::log("ERROR", &format!("保存正版档案失败：{e}"));
+                    } else {
+                        crate::logging::log("INFO", &format!("Microsoft 登录成功：{}", profile.name));
+                    }
+                }
+                Err(e) => crate::logging::log("WARN", &format!("Microsoft 登录失败：{e}")),
+            },
+            Err(e) => crate::logging::log("WARN", &format!("Microsoft 回调失败：{e}")),
+        }
+    });
+    Ok(url)
+}
+
+/// 阻塞式完整流程（CLI 用）。
+pub async fn login(http: &HttpClient, client_id: &str) -> Result<MsProfile> {
+    let (verifier, challenge) = pkce_pair();
+    let state = b64url(&random_bytes(16));
+    let listener = bind_listener().await?;
+    let url = auth_url(client_id, &challenge, &state);
+    open_browser(&url);
+    let code = wait_callback(listener, &state).await?;
+    complete(http, client_id, &code, &verifier).await
+}
+
+pub fn save_profile(paths: &Paths, profile: &MsProfile) -> Result<()> {
     let p = paths.accounts_file();
     let data = serde_json::json!({
         "kind": "microsoft",
@@ -389,23 +417,23 @@ pub fn save_profile(paths: &crate::paths::Paths, profile: &MsProfile) -> Result<
     Ok(())
 }
 
-pub fn read_profile(paths: &crate::paths::Paths) -> Option<MsProfile> {
+pub fn read_profile(paths: &Paths) -> Option<MsProfile> {
     let p = paths.accounts_file();
     let text = std::fs::read_to_string(p).ok()?;
     let v: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}')).ok()?;
     Some(MsProfile {
         name: v.get("name")?.as_str()?.to_string(),
         uuid: v.get("uuid")?.as_str()?.to_string(),
-        access_token: v.get("accessToken").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-        refresh_token: v.get("refreshToken").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+        access_token: v
+            .get("accessToken")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        refresh_token: v
+            .get("refreshToken")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
         expires_at: v.get("expiresAt").and_then(|x| x.as_u64()).unwrap_or(0),
     })
-}
-
-#[allow(dead_code)]
-pub fn ensure_parent(p: &Path) -> std::io::Result<()> {
-    if let Some(d) = p.parent() {
-        std::fs::create_dir_all(d)?;
-    }
-    Ok(())
 }

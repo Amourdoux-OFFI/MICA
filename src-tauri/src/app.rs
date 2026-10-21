@@ -105,6 +105,18 @@ async fn app_info(state: State<'_, Arc<AppState>>) -> CmdResult<AppInfo> {
 }
 
 #[tauri::command]
+async fn ms_login_start(state: State<'_, Arc<AppState>>) -> CmdResult<String> {
+    let settings = state.settings();
+    let mut client_id = settings.ms_client_id.trim().to_string();
+    if client_id.is_empty() {
+        client_id = "74cf63f2-0721-4961-b1b4-7515de2f523f".to_string();
+    }
+    crate::logging::log("INFO", "Microsoft 登录：生成授权链接");
+    crate::msauth::start(state.http(), state.paths.clone(), client_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
 async fn ms_login(state: State<'_, Arc<AppState>>) -> CmdResult<crate::msauth::MsProfile> {
     let settings = state.settings();
     let mut client_id = settings.ms_client_id.trim().to_string();
@@ -1515,6 +1527,7 @@ pub fn run() {
             open_url,
             play_stats,
             ms_login,
+            ms_login_start,
             ms_account,
             get_settings,
             save_settings,

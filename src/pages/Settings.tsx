@@ -40,6 +40,7 @@ export default function SettingsPage() {
   const [javaBusy, setJavaBusy] = useState(false);
   const [ms, setMs] = useState<import("@/lib/api").MsProfile | null>(null);
   const [msBusy, setMsBusy] = useState(false);
+  const [msUrl, setMsUrl] = useState("");
   const [diag, setDiag] = useState<Diagnostics | null>(null);
   const [diagBusy, setDiagBusy] = useState(false);
 
@@ -74,11 +75,26 @@ export default function SettingsPage() {
 
   const doMsLogin = async () => {
     setMsBusy(true);
-    toast("正在打开浏览器，请在微软页面完成登录…", "info");
     try {
-      const p = await api.msLogin();
-      setMs(p);
-      toast(`已登录：${p.name}`, "success");
+      const url = await api.msLoginStart();
+      setMsUrl(url);
+      toast("已生成登录链接：点「打开」或复制到浏览器完成授权", "info");
+      let tries = 0;
+      const timer = window.setInterval(async () => {
+        tries += 1;
+        try {
+          const p = await api.msAccount();
+          if (p) {
+            setMs(p);
+            setMsUrl("");
+            toast(`已登录：${p.name}`, "success");
+            window.clearInterval(timer);
+          }
+        } catch {
+          /* ignore */
+        }
+        if (tries > 120) window.clearInterval(timer);
+      }, 2500);
     } catch (e) {
       toast(String(e), "error");
     } finally {
@@ -156,6 +172,23 @@ export default function SettingsPage() {
                 {msBusy ? <Spinner /> : null}
                 使用 Microsoft 账号登录
               </button>
+            )}
+            {msUrl && !ms && (
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <input readOnly value={msUrl} className="input w-[380px] font-mono text-[10.5px]" />
+                <button className="btn btn-sm" onClick={() => void api.openUrl(msUrl)}>打开</button>
+                <button
+                  className="btn btn-sm"
+                  onClick={() =>
+                    void navigator.clipboard
+                      .writeText(msUrl)
+                      .then(() => toast("登录链接已复制", "success"))
+                      .catch(() => toast("复制失败，请手动选择文本", "error"))
+                  }
+                >
+                  复制
+                </button>
+              </div>
             )}
             <span className="text-[11px] muted">浏览器授权后自动返回；当前仅保存档案，启动游戏暂时仍用离线账户。</span>
           </div>
