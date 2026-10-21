@@ -74,6 +74,7 @@ export default function SettingsPage() {
 
   const doMsLogin = async () => {
     setMsBusy(true);
+    toast("正在打开浏览器，请在微软页面完成登录…", "info");
     try {
       const p = await api.msLogin();
       setMs(p);
