@@ -696,6 +696,12 @@ async fn run(raw: Vec<String>, data_dir: Option<PathBuf>, verbose: bool) -> Resu
             }))
         }
 
+        "open-url" => {
+            let url = args.pos(1).ok_or_else(|| MicaError::msg("缺少 URL"))?;
+            crate::msauth::open_browser(url);
+            Ok(json!({"ok": true, "url": url}))
+        }
+
         "doctor" => {
             let d = crate::diagnostics::run(&ctx.paths, &ctx.http).await;
             let _ = crate::diagnostics::write_report(&ctx.paths, &d);

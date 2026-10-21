@@ -112,9 +112,16 @@ async fn ms_login_start(state: State<'_, Arc<AppState>>) -> CmdResult<String> {
         client_id = "74cf63f2-0721-4961-b1b4-7515de2f523f".to_string();
     }
     crate::logging::log("INFO", "Microsoft 登录：生成授权链接");
-    crate::msauth::start(state.http(), state.paths.clone(), client_id)
+    let url = crate::msauth::start(state.http(), state.paths.clone(), client_id)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // 自动复制登录链接，浏览器打不开时可直接粘贴
+    if let Err(e) = set_clipboard(&url) {
+        crate::logging::log("WARN", &format!("自动复制登录链接失败：{e}"));
+    } else {
+        crate::logging::log("INFO", "登录链接已自动复制到剪贴板");
+    }
+    Ok(url)
 }
 #[tauri::command]
 async fn ms_login(state: State<'_, Arc<AppState>>) -> CmdResult<crate::msauth::MsProfile> {
@@ -143,8 +150,7 @@ fn play_stats(state: State<'_, Arc<AppState>>) -> crate::instances::PlayStats {
     crate::instances::play_stats(&state.paths)
 }
 
-#[tauri::command]
-fn copy_text(text: String) -> CmdResult<()> {
+fn set_clipboard(text: &str) -> CmdResult<()> {
     #[cfg(windows)]
     {
         use windows_sys::Win32::System::DataExchange::{
@@ -182,6 +188,11 @@ fn copy_text(text: String) -> CmdResult<()> {
     }
     Ok(())
 }
+#[tauri::command]
+fn copy_text(text: String) -> CmdResult<()> {
+    set_clipboard(&text)
+}
+
 #[tauri::command]
 fn open_url(url: String) -> CmdResult<()> {
     let u = url.trim();

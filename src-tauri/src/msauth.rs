@@ -132,30 +132,80 @@ fn auth_url(client_id: &str, challenge: &str, state: &str) -> String {
     )
 }
 
+/// 直接按系统默认浏览器的注册表命令启动，绕开 shell/DDE 静默失败。
+#[cfg(windows)]
+fn open_via_default_browser(url: &str) -> bool {
+    use winreg::enums::*;
+    use winreg::RegKey;
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let Ok(key) = hkcu.open_subkey(
+        r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice",
+    ) else {
+        return false;
+    };
+    let Ok(progid) = key.get_value::<String, _>("ProgId") else {
+        return false;
+    };
+    let hkcr = RegKey::predef(HKEY_CLASSES_ROOT);
+    let Ok(cmd_key) = hkcr.open_subkey(format!(r"{progid}\shell\open\command")) else {
+        return false;
+    };
+    let Ok(cmd) = cmd_key.get_value::<String, _>("") else {
+        return false;
+    };
+    let cmd = cmd.trim();
+    let (exe, rest) = if let Some(stripped) = cmd.strip_prefix('"') {
+        match stripped.split_once('"') {
+            Some((exe, rest)) => (exe.to_string(), rest.trim().to_string()),
+            None => return false,
+        }
+    } else {
+        match cmd.split_once(' ') {
+            Some((exe, rest)) => (exe.to_string(), rest.trim().to_string()),
+            None => (cmd.to_string(), String::new()),
+        }
+    };
+    if !std::path::Path::new(&exe).exists() {
+        return false;
+    }
+    let mut args: Vec<String> = Vec::new();
+    let mut replaced = false;
+    for a in rest.split_whitespace() {
+        if a == "%1" {
+            args.push(url.to_string());
+            replaced = true;
+        } else if a.contains("%1") {
+            args.push(a.replace("%1", url));
+            replaced = true;
+        } else {
+            args.push(a.to_string());
+        }
+    }
+    if !replaced {
+        args.push(url.to_string());
+    }
+    match std::process::Command::new(&exe).args(&args).spawn() {
+        Ok(_) => {
+            crate::logging::log("INFO", &format!("已直接启动默认浏览器：{exe}"));
+            true
+        }
+        Err(e) => {
+            crate::logging::log("WARN", &format!("直接启动浏览器失败：{e}"));
+            false
+        }
+    }
+}
 pub fn open_browser(url: &str) {
     #[cfg(windows)]
     {
-        // 首选 cmd start：由 cmd 走 ShellExecute，兼容性最好（explorer.exe 在部分环境会 0xc0000142）
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            let r = std::process::Command::new("cmd")
-                .args(["/c", "start", "", url])
-                .creation_flags(CREATE_NO_WINDOW)
-                .spawn();
-            if r.is_ok() {
-                crate::logging::log("INFO", "已通过 cmd start 打开登录页");
-                return;
-            }
+        if open_via_default_browser(url) {
+            return;
         }
-        // 其次 explorer.exe（普通权限 shell 转发）
-        match std::process::Command::new("explorer").arg(url).spawn() {
-            Ok(_) => {
-                crate::logging::log("INFO", "已通过 explorer.exe 打开登录页");
-                return;
-            }
-            Err(e) => crate::logging::log("WARN", &format!("explorer 打开失败：{e}")),
-        }        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        use windows_sys::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        unsafe {
+            CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
+        }
         let op: Vec<u16> = "open\0".encode_utf16().collect();
         let file: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
         let r = unsafe {
@@ -168,19 +218,20 @@ pub fn open_browser(url: &str) {
                 1,
             )
         };
+        unsafe {
+            CoUninitialize();
+        }
+        crate::logging::log("INFO", &format!("ShellExecuteW 返回 {r:?}"));
         if (r as isize) > 32 {
             return;
         }
-        let _ = std::process::Command::new("cmd")
-            .args(["/c", "start", "", url])
-            .spawn();
+        let _ = std::process::Command::new("explorer").arg(url).spawn();
     }
     #[cfg(not(windows))]
     {
         let _ = std::process::Command::new("xdg-open").arg(url).spawn();
     }
 }
-
 async fn bind_listener() -> Result<TcpListener> {
     TcpListener::bind(("127.0.0.1", 52123))
         .await
