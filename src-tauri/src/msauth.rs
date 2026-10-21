@@ -198,6 +198,20 @@ fn open_via_default_browser(url: &str) -> bool {
 pub fn open_browser(url: &str) {
     #[cfg(windows)]
     {
+        // 首选 PowerShell Start-Process：本机已验证可拉起 Chrome（.NET ShellExecute 路径）
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            let script = format!("Start-Process '{}'", url.replace('\'', "''"));
+            let r = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn();
+            if r.is_ok() {
+                crate::logging::log("INFO", "已通过 PowerShell Start-Process 打开登录页");
+                return;
+            }
+        }
         if open_via_default_browser(url) {
             return;
         }
