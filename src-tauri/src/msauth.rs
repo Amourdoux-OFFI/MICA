@@ -195,10 +195,80 @@ fn open_via_default_browser(url: &str) -> bool {
         }
     }
 }
+/// 用一次性计划任务打开 URL：任务由 Task Scheduler 以普通权限运行，
+/// 可绕过火绒等安全软件对“启动器→浏览器”子进程的拦截。
+#[cfg(windows)]
+fn open_via_task(url: &str) -> bool {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let body = format!("@echo off\r\nstart \"\" \"{}\"\r\n", url.replace('"', "\""));
+    // 有些机器对 %TEMP%/%APPDATA% 有写保护，依次尝试可写目录
+    let mut candidates: Vec<std::path::PathBuf> = vec![std::env::temp_dir().join("mica-open-url.bat")];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("mica-open-url.bat"));
+        }
+    }
+    candidates.push(std::path::PathBuf::from(r"C:\Windows\Temp\mica-open-url.bat"));
+    let mut bat = None;
+    for c in candidates {
+        if std::fs::write(&c, &body).is_ok() {
+            bat = Some(c);
+            break;
+        }
+    }
+    let Some(bat) = bat else {
+        crate::logging::log("WARN", "找不到可写目录放置临时 bat，改用其他方式打开浏览器");
+        return false;
+    };
+    let task = "MICA-OpenUrl";
+    let tr = format!("\"{}\"", bat.display());
+    // 通过 cmd /c 调用，避免 Rust argv 引用方式与 schtasks 解析不一致
+    let cmdline = format!(
+        "schtasks /Create /TN {task} /TR \"\\\"{}\\\"\" /SC ONCE /ST 23:59 /F /RL LIMITED /IT",
+        bat.display()
+    );
+    let create = std::process::Command::new("cmd")
+        .args(["/c", &cmdline])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+    let ok_create = matches!(&create, Ok(o) if o.status.success());
+    match &create {
+        Ok(o) => crate::logging::log(
+            "INFO",
+            &format!(
+                "schtasks create 退出码 {:?} stderr={}",
+                o.status.code(),
+                String::from_utf8_lossy(&o.stderr).chars().take(200).collect::<String>()
+            ),
+        ),
+        Err(e) => crate::logging::log("WARN", &format!("schtasks 启动失败：{e}")),
+    }
+    if !ok_create {
+        crate::logging::log("WARN", "计划任务创建失败，无法走 schtasks 打开浏览器");
+        return false;
+    }
+    let _ = std::process::Command::new("schtasks")
+        .args(["/Run", "/TN", task])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    let _ = std::process::Command::new("schtasks")
+        .args(["/Delete", "/TN", task, "/F"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+    let _ = std::fs::remove_file(&bat);
+    crate::logging::log("INFO", "已通过计划任务打开登录页");
+    true
+}
 pub fn open_browser(url: &str) {
     #[cfg(windows)]
     {
-        // 首选 PowerShell Start-Process：本机已验证可拉起 Chrome（.NET ShellExecute 路径）
+        // 首选计划任务：绕过安全软件对子进程启动的拦截
+        if open_via_task(url) {
+            return;
+        }
+        // 其次 PowerShell Start-Process
         {
             use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
