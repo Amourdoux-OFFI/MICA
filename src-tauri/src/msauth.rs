@@ -135,16 +135,27 @@ fn auth_url(client_id: &str, challenge: &str, state: &str) -> String {
 pub fn open_browser(url: &str) {
     #[cfg(windows)]
     {
-        // 优先走 explorer.exe：MICA 以管理员运行时，Chrome 不会从提升进程启动；
-        // explorer 属于普通权限的 shell，能把 URL 交给默认浏览器（PCL 同类做法）。
+        // 首选 cmd start：由 cmd 走 ShellExecute，兼容性最好（explorer.exe 在部分环境会 0xc0000142）
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            let r = std::process::Command::new("cmd")
+                .args(["/c", "start", "", url])
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn();
+            if r.is_ok() {
+                crate::logging::log("INFO", "已通过 cmd start 打开登录页");
+                return;
+            }
+        }
+        // 其次 explorer.exe（普通权限 shell 转发）
         match std::process::Command::new("explorer").arg(url).spawn() {
             Ok(_) => {
                 crate::logging::log("INFO", "已通过 explorer.exe 打开登录页");
                 return;
             }
             Err(e) => crate::logging::log("WARN", &format!("explorer 打开失败：{e}")),
-        }
-        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        }        use windows_sys::Win32::UI::Shell::ShellExecuteW;
         let op: Vec<u16> = "open\0".encode_utf16().collect();
         let file: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
         let r = unsafe {
