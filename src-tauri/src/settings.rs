@@ -38,9 +38,19 @@ pub struct Settings {
     /// 启动窗口：small | windowed | fullscreen
     pub game_window: String,
     /// 强制 Unicode 字体（中文不显示方块）
+    #[serde(default = "default_true")]
     pub force_unicode_font: bool,
     /// Microsoft 应用 Client ID（公共客户端，非密钥）
+    #[serde(default = "default_ms_client")]
     pub ms_client_id: String,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_ms_client() -> String {
+    "74cf63f2-0721-4961-b1b4-7515de2f523f".to_string()
 }
 
 impl Default for Settings {

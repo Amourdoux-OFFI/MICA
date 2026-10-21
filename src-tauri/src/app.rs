@@ -107,7 +107,12 @@ async fn app_info(state: State<'_, Arc<AppState>>) -> CmdResult<AppInfo> {
 #[tauri::command]
 async fn ms_login(state: State<'_, Arc<AppState>>) -> CmdResult<crate::msauth::MsProfile> {
     let settings = state.settings();
-    let client_id = settings.ms_client_id.trim().to_string();
+    let mut client_id = settings.ms_client_id.trim().to_string();
+    if client_id.is_empty() {
+        // 旧版 settings.json 没有该字段时用内置 Client ID 兜底
+        client_id = "74cf63f2-0721-4961-b1b4-7515de2f523f".to_string();
+    }
+    crate::logging::log("INFO", &format!("Microsoft 登录：打开浏览器（client={client_id}）"));
     let http = state.http();
     let profile = crate::msauth::login(&http, &client_id)
         .await
