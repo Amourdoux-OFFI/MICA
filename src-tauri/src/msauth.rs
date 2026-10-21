@@ -134,23 +134,48 @@ fn auth_url(client_id: &str, challenge: &str, state: &str) -> String {
     )
 }
 
-fn open_browser(url: &str) {
+fn open_browser(url: &str) -> Result<()> {
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("rundll32")
-            .args(["url.dll,FileProtocolHandler", url])
-            .spawn();
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        let op: Vec<u16> = "open\0".encode_utf16().collect();
+        let file: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
+        let r = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                op.as_ptr(),
+                file.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                1,
+            )
+        };
+        if (r as isize) > 32 {
+            return Ok(());
+        }
+        crate::logging::log("WARN", &format!("ShellExecuteW 打开浏览器失败（{r:?}），改用 cmd start"));
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let status = std::process::Command::new("cmd")
+            .args(["/c", "start", "", url])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+        match status {
+            Ok(s) if s.success() => Ok(()),
+            _ => Err(MicaError::Msg("无法打开浏览器，请手动访问登录地址".into())),
+        }
     }
     #[cfg(not(windows))]
     {
-        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| MicaError::Msg(format!("无法打开浏览器：{e}")))
     }
 }
 
-async fn wait_callback(expected_state: &str) -> Result<String> {
-    let listener = TcpListener::bind(("127.0.0.1", 52123))
-        .await
-        .map_err(|e| MicaError::Msg(format!("无法监听本地回调端口 52123：{e}")))?;
+async fn wait_callback(listener: TcpListener, expected_state: &str) -> Result<String> {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(300);
     loop {
         let accept = tokio::time::timeout_at(deadline, listener.accept()).await;
@@ -238,9 +263,13 @@ pub async fn login(http: &HttpClient, client_id: &str) -> Result<MsProfile> {
     }
     let (verifier, challenge) = pkce_pair();
     let state = b64url(&random_bytes(16));
+    let listener = TcpListener::bind(("127.0.0.1", 52123))
+        .await
+        .map_err(|e| MicaError::Msg(format!("无法监听本地回调端口 52123（可能被其他程序占用）：{e}")))?;
     let url = auth_url(client_id, &challenge, &state);
-    open_browser(&url);
-    let code = wait_callback(&state).await?;
+    crate::logging::log("INFO", "Microsoft 登录：打开系统浏览器");
+    open_browser(&url)?;
+    let code = wait_callback(listener, &state).await?;
 
     let form = [
         ("client_id", client_id),
