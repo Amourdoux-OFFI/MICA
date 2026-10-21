@@ -135,6 +135,15 @@ fn auth_url(client_id: &str, challenge: &str, state: &str) -> String {
 pub fn open_browser(url: &str) {
     #[cfg(windows)]
     {
+        // 优先走 explorer.exe：MICA 以管理员运行时，Chrome 不会从提升进程启动；
+        // explorer 属于普通权限的 shell，能把 URL 交给默认浏览器（PCL 同类做法）。
+        match std::process::Command::new("explorer").arg(url).spawn() {
+            Ok(_) => {
+                crate::logging::log("INFO", "已通过 explorer.exe 打开登录页");
+                return;
+            }
+            Err(e) => crate::logging::log("WARN", &format!("explorer 打开失败：{e}")),
+        }
         use windows_sys::Win32::UI::Shell::ShellExecuteW;
         let op: Vec<u16> = "open\0".encode_utf16().collect();
         let file: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
