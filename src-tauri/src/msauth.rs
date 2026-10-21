@@ -222,7 +222,6 @@ fn open_via_task(url: &str) -> bool {
         return false;
     };
     let task = "MICA-OpenUrl";
-    let tr = format!("\"{}\"", bat.display());
     // 通过 cmd /c 调用，避免 Rust argv 引用方式与 schtasks 解析不一致
     let cmdline = format!(
         "schtasks /Create /TN {task} /TR \"\\\"{}\\\"\" /SC ONCE /ST 23:59 /F /RL LIMITED /IT",
@@ -264,27 +263,7 @@ fn open_via_task(url: &str) -> bool {
 pub fn open_browser(url: &str) {
     #[cfg(windows)]
     {
-        // 首选计划任务：绕过安全软件对子进程启动的拦截
-        if open_via_task(url) {
-            return;
-        }
-        // 其次 PowerShell Start-Process
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            let script = format!("Start-Process '{}'", url.replace('\'', "''"));
-            let r = std::process::Command::new("powershell")
-                .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])
-                .creation_flags(CREATE_NO_WINDOW)
-                .spawn();
-            if r.is_ok() {
-                crate::logging::log("INFO", "已通过 PowerShell Start-Process 打开登录页");
-                return;
-            }
-        }
-        if open_via_default_browser(url) {
-            return;
-        }
+        // 与 PCL 完全一致的调用：ShellExecute("open", url)
         use windows_sys::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
         use windows_sys::Win32::UI::Shell::ShellExecuteW;
         unsafe {
@@ -309,7 +288,19 @@ pub fn open_browser(url: &str) {
         if (r as isize) > 32 {
             return;
         }
-        let _ = std::process::Command::new("explorer").arg(url).spawn();
+        if open_via_task(url) {
+            return;
+        }
+        if open_via_default_browser(url) {
+            return;
+        }
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let script = format!("Start-Process '{}'", url.replace('\'', "''"));
+        let _ = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn();
     }
     #[cfg(not(windows))]
     {
