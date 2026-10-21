@@ -105,6 +105,23 @@ async fn app_info(state: State<'_, Arc<AppState>>) -> CmdResult<AppInfo> {
 }
 
 #[tauri::command]
+async fn ms_login(state: State<'_, Arc<AppState>>) -> CmdResult<crate::msauth::MsProfile> {
+    let settings = state.settings();
+    let client_id = settings.ms_client_id.trim().to_string();
+    let http = state.http();
+    let profile = crate::msauth::login(&http, &client_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    crate::msauth::save_profile(&state.paths, &profile).map_err(|e| e.to_string())?;
+    crate::logging::log("INFO", &format!("Microsoft 登录成功：{}", profile.name));
+    Ok(profile)
+}
+
+#[tauri::command]
+fn ms_account(state: State<'_, Arc<AppState>>) -> CmdResult<Option<crate::msauth::MsProfile>> {
+    Ok(crate::msauth::read_profile(&state.paths))
+}
+#[tauri::command]
 fn play_stats(state: State<'_, Arc<AppState>>) -> crate::instances::PlayStats {
     crate::instances::play_stats(&state.paths)
 }
@@ -1492,6 +1509,8 @@ pub fn run() {
             cancel_task,
             open_url,
             play_stats,
+            ms_login,
+            ms_account,
             get_settings,
             save_settings,
             list_versions,

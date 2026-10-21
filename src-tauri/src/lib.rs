@@ -17,6 +17,7 @@ pub mod localization;
 pub mod logging;
 pub mod modpack;
 pub mod modrinth;
+pub mod msauth;
 pub mod mojang;
 pub mod paths;
 pub mod reporter;

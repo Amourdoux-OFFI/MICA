@@ -39,6 +39,8 @@ pub struct Settings {
     pub game_window: String,
     /// 强制 Unicode 字体（中文不显示方块）
     pub force_unicode_font: bool,
+    /// Microsoft 应用 Client ID（公共客户端，非密钥）
+    pub ms_client_id: String,
 }
 
 impl Default for Settings {
@@ -59,6 +61,7 @@ impl Default for Settings {
             curseforge_api_key: String::new(),
             game_window: "windowed".into(),
             force_unicode_font: true,
+            ms_client_id: "74cf63f2-0721-4961-b1b4-7515de2f523f".into(),
         }
     }
 }

@@ -38,6 +38,8 @@ export default function SettingsPage() {
   const [info, setInfo] = useState<{ version: string; dataDir: string } | null>(null);
   const [installing, setInstalling] = useState<number | null>(null);
   const [javaBusy, setJavaBusy] = useState(false);
+  const [ms, setMs] = useState<import("@/lib/api").MsProfile | null>(null);
+  const [msBusy, setMsBusy] = useState(false);
   const [diag, setDiag] = useState<Diagnostics | null>(null);
   const [diagBusy, setDiagBusy] = useState(false);
 
@@ -51,6 +53,7 @@ export default function SettingsPage() {
       .then((i) => setInfo({ version: i.version, dataDir: i.dataDir }))
       .catch(() => undefined);
     void loadJava();
+    void api.msAccount().then(setMs).catch(() => undefined);
   }, [loadJava]);
 
   const patch = (p: Partial<Settings>) => setDraft((d) => (d ? { ...d, ...p } : d));
@@ -66,6 +69,19 @@ export default function SettingsPage() {
       toast(String(e), "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const doMsLogin = async () => {
+    setMsBusy(true);
+    try {
+      const p = await api.msLogin();
+      setMs(p);
+      toast(`已登录：${p.name}`, "success");
+    } catch (e) {
+      toast(String(e), "error");
+    } finally {
+      setMsBusy(false);
     }
   };
 
@@ -126,6 +142,23 @@ export default function SettingsPage() {
       </Section>
 
       <Section icon={<MonitorSmartphone size={15} />} title="外观">
+        <Field label="微软正版登录">
+          <div className="flex flex-col gap-1.5">
+            {ms ? (
+              <div className="text-[12px]">
+                <span className="text-brand-300">{ms.name}</span>
+                <span className="ml-2 font-mono text-[10.5px] muted">{ms.uuid}</span>
+                <button className="btn btn-sm ml-2" onClick={() => void doMsLogin()} disabled={msBusy}>重新登录</button>
+              </div>
+            ) : (
+              <button className="btn btn-sm w-[180px]" onClick={() => void doMsLogin()} disabled={msBusy}>
+                {msBusy ? <Spinner /> : null}
+                使用 Microsoft 账号登录
+              </button>
+            )}
+            <span className="text-[11px] muted">浏览器授权后自动返回；当前仅保存档案，启动游戏暂时仍用离线账户。</span>
+          </div>
+        </Field>
         <Field label="主题">
           <div className="flex gap-2">
             {(

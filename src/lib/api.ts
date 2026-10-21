@@ -226,6 +226,14 @@ export interface CfSearchQuery {
   index?: number;
   pageSize?: number;
 }
+export interface MsProfile {
+  name: string;
+  uuid: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+}
+
 export interface ModEntry {
   fileName: string;
   path: string;
@@ -396,6 +404,8 @@ export const api = {
   javaInstall: (major: number) => call<JavaRuntime>("java_install", { major }),
   javaCancel: () => call<boolean>("java_cancel"),
   cancelTask: () => call<boolean>("cancel_task"),
+  msLogin: () => call<MsProfile>("ms_login"),
+  msAccount: () => call<MsProfile | null>("ms_account"),
   openUrl: (url: string) => call<void>("open_url", { url }),
 
   servers: () => call<ServerInfo[]>("list_servers"),
